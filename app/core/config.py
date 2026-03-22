@@ -1,0 +1,23 @@
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    app_name: str = "Job Search Agent"
+    debug: bool = True
+    database_url: str = "sqlite:///./jobs.db"
+
+    # Scoring weights (sum should be 100)
+    weight_title_match: float = 25
+    weight_company_fit: float = 20
+    weight_location: float = 15
+    weight_tech_depth: float = 15
+    weight_ai_resilience: float = 15
+    weight_salary: float = 10
+
+    # Minimum score to surface a job
+    min_score_threshold: float = 40
+
+    model_config = {"env_file": ".env", "env_prefix": "JOBSEARCH_"}
+
+
+settings = Settings()

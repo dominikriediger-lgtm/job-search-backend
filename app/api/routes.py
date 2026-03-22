@@ -1,0 +1,113 @@
+"""API routes for the job search agent."""
+
+from fastapi import APIRouter, HTTPException
+
+from app.data.profile_seed import CANDIDATE_PROFILE
+from app.models.schemas import JobListing, JobStatus, ScoredJob
+from app.services.job_store import job_store
+from app.services.scoring import score_and_rank_jobs, score_job
+from app.services.search import generate_search_queries, get_supported_sources
+
+router = APIRouter()
+
+
+@router.get("/profile")
+def get_profile():
+    """Return the candidate profile."""
+    return CANDIDATE_PROFILE
+
+
+@router.get("/profile/titles")
+def get_target_titles():
+    """Return all target job titles grouped by cluster."""
+    clusters = {}
+    for jt in CANDIDATE_PROFILE.job_titles:
+        cluster_key = jt.cluster.value
+        if cluster_key not in clusters:
+            clusters[cluster_key] = []
+        clusters[cluster_key].append({"title": jt.title, "keywords": jt.keywords})
+    return clusters
+
+
+@router.get("/search/queries")
+def get_search_queries(max_queries: int = 30):
+    """Generate search queries based on profile."""
+    return generate_search_queries(max_queries)
+
+
+@router.get("/search/sources")
+def get_sources():
+    """Return supported job sources."""
+    return get_supported_sources()
+
+
+@router.post("/jobs", response_model=JobListing)
+def add_job(job: JobListing):
+    """Add a new job listing."""
+    if job.url and job_store.exists_by_url(job.url):
+        raise HTTPException(status_code=409, detail="Job with this URL already exists")
+    return job_store.add(job)
+
+
+@router.post("/jobs/batch", response_model=list[JobListing])
+def add_jobs_batch(jobs: list[JobListing]):
+    """Add multiple job listings at once."""
+    added = []
+    for job in jobs:
+        if not job_store.exists_by_url(job.url):
+            added.append(job_store.add(job))
+    return added
+
+
+@router.get("/jobs", response_model=list[JobListing])
+def list_jobs(status: JobStatus | None = None):
+    """List all jobs, optionally filtered by status."""
+    return job_store.get_all(status)
+
+
+@router.get("/jobs/{job_id}", response_model=JobListing)
+def get_job(job_id: str):
+    """Get a specific job by ID."""
+    job = job_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.patch("/jobs/{job_id}/status")
+def update_job_status(job_id: str, status: JobStatus):
+    """Update job status (e.g. applied, interview, rejected)."""
+    job = job_store.update_status(job_id, status)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@router.post("/jobs/score", response_model=ScoredJob)
+def score_single_job(job: JobListing):
+    """Score a single job against the profile."""
+    return score_job(job)
+
+
+@router.get("/jobs/scored/all", response_model=list[ScoredJob])
+def get_scored_jobs():
+    """Score and rank all stored jobs."""
+    jobs = job_store.get_all()
+    return score_and_rank_jobs(jobs)
+
+
+@router.get("/stats")
+def get_stats():
+    """Return overview stats."""
+    all_jobs = job_store.get_all()
+    scored = score_and_rank_jobs(all_jobs)
+    return {
+        "total_jobs": job_store.count(),
+        "jobs_above_threshold": len(scored),
+        "avg_score": round(sum(s.total_score for s in scored) / len(scored), 1) if scored else 0,
+        "top_score": scored[0].total_score if scored else 0,
+        "by_status": {
+            status.value: len([j for j in all_jobs if j.status == status])
+            for status in JobStatus
+        },
+    }
