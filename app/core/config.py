@@ -1,9 +1,13 @@
 from pathlib import Path
 
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 
-# Resolve .env relative to the project root (two levels up from this file)
+# Explicitly load .env into os.environ BEFORE pydantic-settings reads it.
+# pydantic-settings' built-in env_file support is unreliable on Windows
+# with long paths (OneDrive). python-dotenv handles this correctly.
 _ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(_ENV_FILE, override=False)
 
 
 class Settings(BaseSettings):
@@ -32,11 +36,7 @@ class Settings(BaseSettings):
     # SerpAPI (free: 100 searches/month, sign up at serpapi.com)
     serpapi_key: str | None = None
 
-    model_config = {
-        "env_file": str(_ENV_FILE),
-        "env_prefix": "JOBSEARCH_",
-        "env_file_encoding": "utf-8",
-    }
+    model_config = {"env_prefix": "JOBSEARCH_"}
 
 
 settings = Settings()
