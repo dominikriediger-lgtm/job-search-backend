@@ -1,13 +1,21 @@
 """Orchestrates scraping across all configured sources."""
 
 import asyncio
+import logging
 
 from app.data.profile_seed import CANDIDATE_PROFILE
+from app.data.target_companies import TARGET_COMPANIES
 from app.models.schemas import ClusterPriority, JobListing
 from app.services.job_store import job_store
-from app.data.target_companies import TARGET_COMPANIES
 from app.services.scrapers.adzuna import AdzunaScraper
 from app.services.scrapers.arbeitnow import ArbeitnowScraper
+from app.services.scrapers.ats_apis import (
+    scrape_ashby,
+    scrape_greenhouse,
+    scrape_lever,
+    scrape_personio_xml,
+    scrape_smartrecruiters,
+)
 from app.services.scrapers.base import BaseScraper
 from app.services.scrapers.career_page import CareerPageScraper
 from app.services.scrapers.firecrawl_scraper import FirecrawlScraper
@@ -17,6 +25,8 @@ from app.services.scrapers.google_search import (
 )
 from app.services.scoring import score_and_rank_jobs
 
+logger = logging.getLogger(__name__)
+
 ALL_SCRAPERS: list[BaseScraper] = [
     AdzunaScraper(),
     ArbeitnowScraper(),
@@ -25,6 +35,15 @@ ALL_SCRAPERS: list[BaseScraper] = [
 
 career_scraper = CareerPageScraper()
 google_scraper = GoogleBooleanSearchScraper()
+
+# Map ATS platform names to scraper functions
+ATS_SCRAPERS = {
+    "greenhouse": scrape_greenhouse,
+    "lever": scrape_lever,
+    "ashby": scrape_ashby,
+    "personio": scrape_personio_xml,
+    "smartrecruiters": scrape_smartrecruiters,
+}
 
 
 def get_active_scrapers() -> list[dict]:
@@ -40,6 +59,11 @@ def get_active_scrapers() -> list[dict]:
     scrapers.append({
         "name": career_scraper.source_name,
         "display_name": career_scraper.display_name,
+        "configured": True,
+    })
+    scrapers.append({
+        "name": "ats_apis",
+        "display_name": "ATS APIs (Greenhouse, Lever, Ashby, Personio, SmartRecruiters)",
         "configured": True,
     })
     return scrapers
@@ -123,34 +147,78 @@ async def run_full_search(max_per_source: int = 15) -> dict:
     }
 
 
+async def _crawl_company_ats(company: dict) -> list[JobListing]:
+    """Try to fetch jobs from a company's ATS API. Falls back to HTML scraping."""
+    ats = company.get("ats")
+    name = company["name"]
+
+    if ats:
+        platform = ats["platform"]
+        slug = ats["slug"]
+        scraper_fn = ATS_SCRAPERS.get(platform)
+        if scraper_fn:
+            try:
+                jobs = await scraper_fn(slug, name)
+                if jobs:
+                    logger.info(f"ATS API ({platform}): {name} -> {len(jobs)} jobs")
+                    return jobs
+                logger.info(f"ATS API ({platform}): {name} -> 0 jobs, falling back to HTML")
+            except Exception as e:
+                logger.warning(f"ATS API ({platform}) failed for {name}: {e}")
+
+    # Fallback: HTML scraping
+    try:
+        jobs = await career_scraper.crawl_career_page(company["careers_url"], name)
+        logger.info(f"HTML scrape: {name} -> {len(jobs)} jobs")
+        return jobs
+    except Exception as e:
+        logger.warning(f"HTML scrape failed for {name}: {e}")
+        return []
+
+
 async def crawl_target_companies() -> dict:
-    """Crawl all target company career pages and store + score found jobs."""
-    result = await career_scraper.crawl_all_companies(TARGET_COMPANIES)
+    """Crawl all target company career pages via ATS APIs + HTML fallback."""
+    # Run all company crawls concurrently (with semaphore to avoid flooding)
+    sem = asyncio.Semaphore(5)
 
+    async def _crawl_with_sem(company):
+        async with sem:
+            return company["name"], await _crawl_company_ats(company)
+
+    tasks = [_crawl_with_sem(c) for c in TARGET_COMPANIES]
+    results = await asyncio.gather(*tasks)
+
+    per_company = {}
+    all_jobs = []
     new_count = 0
-    for job in result["jobs"]:
-        if not job_store.exists_by_url(job.url):
-            job_store.add(job)
-            new_count += 1
 
-    # Score everything
-    all_jobs = job_store.get_all()
-    scored = score_and_rank_jobs(all_jobs)
+    for name, jobs in results:
+        company = next(c for c in TARGET_COMPANIES if c["name"] == name)
+        ats = company.get("ats")
+        per_company[name] = {
+            "url": company["careers_url"],
+            "ats": ats["platform"] if ats else "html",
+            "jobs_found": len(jobs),
+            "status": "ok" if jobs else "no_jobs_found",
+        }
 
-    # Track which companies had issues (for Firecrawl fallback later)
-    blocked = [
-        name for name, info in result["per_company"].items()
-        if info["status"] != "ok"
-    ]
+        for job in jobs:
+            if not job_store.exists_by_url(job.url):
+                job_store.add(job)
+                new_count += 1
+        all_jobs.extend(jobs)
+
+    scored = score_and_rank_jobs(job_store.get_all())
+    blocked = [name for name, info in per_company.items() if info["status"] != "ok"]
 
     return {
-        "companies_crawled": result["companies_crawled"],
-        "total_jobs_found": result["total_jobs_found"],
+        "companies_crawled": len(TARGET_COMPANIES),
+        "total_jobs_found": len(all_jobs),
         "new_added": new_count,
         "blocked_companies": blocked,
         "total_in_store": job_store.count(),
         "jobs_above_threshold": len(scored),
-        "per_company": result["per_company"],
+        "per_company": per_company,
     }
 
 
@@ -163,7 +231,7 @@ async def crawl_single_company(company_name: str) -> dict:
     if not company:
         return {"error": f"Company '{company_name}' not found in target list"}
 
-    jobs = await career_scraper.crawl_career_page(company["careers_url"], company["name"])
+    jobs = await _crawl_company_ats(company)
 
     new_count = 0
     for job in jobs:
@@ -174,6 +242,7 @@ async def crawl_single_company(company_name: str) -> dict:
     return {
         "company": company["name"],
         "url": company["careers_url"],
+        "ats": company.get("ats", {}).get("platform", "html") if company.get("ats") else "html",
         "jobs_found": len(jobs),
         "new_added": new_count,
         "jobs": [{"title": j.title, "url": j.url, "location": j.location} for j in jobs],
