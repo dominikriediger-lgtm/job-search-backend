@@ -69,7 +69,7 @@ def _is_location_relevant(job: JobListing) -> bool:
 
 # Seniority: exclude jobs clearly below the candidate's level (8+ years experience)
 _JUNIOR_RE = re.compile(
-    r"\b(intern\b|internship|praktik|werkstudent|working student|"
+    r"\b(intern\b|internship|praktik\w*|werkstudent\w*|working student|"
     r"junior\b|entry.level|graduate\b|trainee|azubi|ausbildung|"
     r"duales studium|dual.student|berufseinsteiger|studentische.hilfskraft|"
     r"student assistant|co.?op\b|apprentice)\b",

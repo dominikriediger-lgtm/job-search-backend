@@ -13,7 +13,7 @@ from app.models.schemas import (
 
 # Seniority detection patterns
 _JUNIOR_SIGNALS = re.compile(
-    r"\b(intern\b|internship|praktik|werkstudent|working student|"
+    r"\b(intern\b|internship|praktik\w*|werkstudent\w*|working student|"
     r"junior\b|entry.level|graduate\b|trainee|azubi|ausbildung|"
     r"berufseinsteiger|student)\b",
     re.IGNORECASE,
