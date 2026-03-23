@@ -1,4 +1,9 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+# Resolve .env relative to the project root (two levels up from this file)
+_ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
 
 
 class Settings(BaseSettings):
@@ -27,7 +32,11 @@ class Settings(BaseSettings):
     # SerpAPI (free: 100 searches/month, sign up at serpapi.com)
     serpapi_key: str | None = None
 
-    model_config = {"env_file": ".env", "env_prefix": "JOBSEARCH_"}
+    model_config = {
+        "env_file": str(_ENV_FILE),
+        "env_prefix": "JOBSEARCH_",
+        "env_file_encoding": "utf-8",
+    }
 
 
 settings = Settings()
