@@ -165,18 +165,89 @@ class GoogleBooleanSearchScraper(BaseScraper):
 
         jobs = []
         for r in results:
+            url = r["url"]
+            title = r["title"]
             snippet = r.get("snippet", "")
+
+            # Filter out non-job URLs
+            if not self._is_job_url(url, title, snippet):
+                logger.debug("Skipping non-job result: %s", title[:80])
+                continue
+
             jobs.append(JobListing(
-                title=r["title"],
-                company=self._extract_company(r["url"], r["title"]),
+                title=self._clean_title(title),
+                company=self._extract_company(url, title),
                 location=self._extract_location(snippet) or location,
-                work_mode=self._detect_work_mode(f"{r['title']} {snippet}"),
+                work_mode=self._detect_work_mode(f"{title} {snippet}"),
                 description=snippet,
-                url=r["url"],
+                url=url,
                 source=self.source_name,
             ))
 
+        logger.info("Kept %d job results out of %d total", len(jobs), len(results))
         return jobs
+
+    def _is_job_url(self, url: str, title: str, snippet: str) -> bool:
+        """Check if a search result is actually a job posting, not a profile/article/noise."""
+        url_lower = url.lower()
+        text = f"{title} {snippet}".lower()
+
+        # LinkedIn: only accept /jobs/ URLs, reject /in/ (profiles), /pulse/ (articles), /company/ (pages)
+        if "linkedin.com" in url_lower:
+            if "/jobs/" in url_lower or "/job/" in url_lower:
+                return True
+            # Reject profiles, articles, company pages
+            return False
+
+        # Job board / ATS URLs are always valid
+        job_domains = [
+            "greenhouse.io", "lever.co", "ashbyhq.com", "personio.de",
+            "smartrecruiters.com", "workable.com", "breezy.hr",
+            "stepstone.de", "indeed.com", "de.indeed.com",
+            "glassdoor.", "xing.com/jobs", "monster.de",
+            "arbeitnow.com", "join.com", "stellenanzeigen.de",
+        ]
+        if any(d in url_lower for d in job_domains):
+            return True
+
+        # Company career pages (contains /career, /jobs, /stelle, etc.)
+        career_signals = ["/career", "/jobs", "/job/", "/stelle", "/vacancies", "/openings", "/open-positions"]
+        if any(s in url_lower for s in career_signals):
+            return True
+
+        # Reject obvious non-job content
+        noise_patterns = [
+            r"\b(wikipedia|arxiv|academia\.edu|researchgate|scholar\.google)\b",
+            r"\b(spirit of 1914|freelance.*teaching|english teach)\b",
+            r"\b(news|blog|press|article|podcast|interview|review)\b.*\b(about|with|how|why)\b",
+        ]
+        for pattern in noise_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return False
+
+        # If the URL doesn't match any known job pattern, check if title looks job-like
+        job_title_signals = [
+            "manager", "lead", "head", "director", "chief", "officer",
+            "analyst", "coordinator", "specialist", "associate",
+            "stelle", "job", "position", "hiring", "karriere", "career",
+            "(m/w/d)", "(m/f/d)", "(all genders)", "(gn)",
+        ]
+        if any(s in text for s in job_title_signals):
+            return True
+
+        # Default: reject unknown URLs (better to be strict than to show noise)
+        logger.debug("Rejecting unknown URL pattern: %s", url[:100])
+        return False
+
+    def _clean_title(self, title: str) -> str:
+        """Clean up search result titles to extract the actual job title."""
+        # Remove common suffixes like " | Company", " - Company", " — Company"
+        # But keep the job title part
+        title = re.sub(r"\s*[|–—]\s*LinkedIn$", "", title)
+        title = re.sub(r"\s*[|–—]\s*StepStone$", "", title)
+        title = re.sub(r"\s*[|–—]\s*Indeed\.com$", "", title)
+        title = re.sub(r"\s*[|–—]\s*Glassdoor$", "", title)
+        return title.strip()
 
     def _extract_company(self, url: str, title: str) -> str:
         """Try to extract company name from URL or title."""
@@ -261,11 +332,13 @@ def build_boolean_query(
         query += f" {site_filter}"
 
     # Exclusions — filter out junior/intern level (candidate has 8+ years experience)
+    # and irrelevant job types
     default_exclude = [
         "intern", "internship", "praktikum", "praktikant",
         "werkstudent", "working student",
         "junior", "trainee", "azubi", "ausbildung",
         "graduate program", "entry level", "berufseinsteiger",
+        "freelance", "teaching", "teacher", "Nachhilfe",
     ]
     all_exclude = default_exclude + (exclude or [])
     for ex in all_exclude:
