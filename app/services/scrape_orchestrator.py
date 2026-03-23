@@ -11,6 +11,10 @@ from app.services.scrapers.arbeitnow import ArbeitnowScraper
 from app.services.scrapers.base import BaseScraper
 from app.services.scrapers.career_page import CareerPageScraper
 from app.services.scrapers.firecrawl_scraper import FirecrawlScraper
+from app.services.scrapers.google_search import (
+    GoogleBooleanSearchScraper,
+    generate_boolean_queries,
+)
 from app.services.scoring import score_and_rank_jobs
 
 ALL_SCRAPERS: list[BaseScraper] = [
@@ -20,6 +24,7 @@ ALL_SCRAPERS: list[BaseScraper] = [
 ]
 
 career_scraper = CareerPageScraper()
+google_scraper = GoogleBooleanSearchScraper()
 
 
 def get_active_scrapers() -> list[dict]:
@@ -172,4 +177,71 @@ async def crawl_single_company(company_name: str) -> dict:
         "jobs_found": len(jobs),
         "new_added": new_count,
         "jobs": [{"title": j.title, "url": j.url, "location": j.location} for j in jobs],
+    }
+
+
+async def run_google_boolean_search() -> dict:
+    """Run all generated boolean queries through Google and store results."""
+    queries = generate_boolean_queries(CANDIDATE_PROFILE.job_titles)
+
+    total_found = 0
+    total_new = 0
+    results_per_query = []
+
+    for q in queries:
+        jobs = await google_scraper.search(q["query"], max_results=20)
+        new_count = 0
+        for job in jobs:
+            if not job_store.exists_by_url(job.url):
+                job_store.add(job)
+                new_count += 1
+
+        total_found += len(jobs)
+        total_new += new_count
+        results_per_query.append({
+            "name": q["name"],
+            "cluster": q["cluster"],
+            "strategy": q["strategy"],
+            "found": len(jobs),
+            "new": new_count,
+        })
+
+    scored = score_and_rank_jobs(job_store.get_all())
+
+    return {
+        "queries_run": len(queries),
+        "total_found": total_found,
+        "new_added": total_new,
+        "total_in_store": job_store.count(),
+        "jobs_above_threshold": len(scored),
+        "top_job": {
+            "title": scored[0].job.title,
+            "company": scored[0].job.company,
+            "score": scored[0].total_score,
+        } if scored else None,
+        "per_query": results_per_query,
+    }
+
+
+async def run_single_boolean_query(query: str) -> dict:
+    """Run a single custom boolean query through Google."""
+    jobs = await google_scraper.search(query, max_results=30)
+
+    new_count = 0
+    for job in jobs:
+        if not job_store.exists_by_url(job.url):
+            job_store.add(job)
+            new_count += 1
+
+    scored = score_and_rank_jobs(job_store.get_all())
+
+    return {
+        "query": query,
+        "found": len(jobs),
+        "new_added": new_count,
+        "total_in_store": job_store.count(),
+        "jobs": [
+            {"title": j.title, "company": j.company, "url": j.url}
+            for j in jobs
+        ],
     }

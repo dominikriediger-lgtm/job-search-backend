@@ -11,8 +11,11 @@ from app.services.scrape_orchestrator import (
     crawl_target_companies,
     get_active_scrapers,
     run_full_search,
+    run_google_boolean_search,
+    run_single_boolean_query,
     scrape_all_sources,
 )
+from app.services.scrapers.google_search import generate_boolean_queries
 from app.services.scoring import score_and_rank_jobs, score_job
 from app.services.search import generate_search_queries, get_supported_sources
 
@@ -132,6 +135,27 @@ async def crawl_all_companies():
 async def crawl_company(company_name: str):
     """Crawl a single company's career page by name."""
     return await crawl_single_company(company_name)
+
+
+@router.get("/google/queries")
+def get_boolean_queries():
+    """Preview all generated Google boolean search queries."""
+    return generate_boolean_queries(CANDIDATE_PROFILE.job_titles)
+
+
+@router.post("/google/search")
+async def google_boolean_search():
+    """Run all boolean queries through Google and store+score results."""
+    return await run_google_boolean_search()
+
+
+@router.post("/google/custom")
+async def google_custom_query(query: str):
+    """Run a custom boolean query through Google.
+
+    Example: ("Chief of Staff" OR "Founders Associate") "München" site:linkedin.com/jobs
+    """
+    return await run_single_boolean_query(query)
 
 
 @router.get("/companies")
