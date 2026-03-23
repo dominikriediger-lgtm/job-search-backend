@@ -349,6 +349,31 @@
             color: var(--text2);
             margin-top: 2px;
         }
+
+        /* NEW badge for freshly discovered jobs */
+        .badge-new {
+            background: var(--green);
+            color: #111;
+            font-size: 10px;
+            font-weight: 700;
+            padding: 1px 5px;
+            border-radius: 3px;
+            margin-right: 4px;
+            letter-spacing: 0.5px;
+        }
+        tr.new-job { background: rgba(80, 250, 123, 0.05); }
+
+        /* Archive button */
+        .btn-archive {
+            background: transparent;
+            color: var(--text2);
+            border: 1px solid var(--surface2);
+            padding: 2px 6px;
+            margin-left: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .btn-archive:hover { background: #ff5555; color: white; border-color: #ff5555; }
     </style>
 </head>
 <body>
@@ -590,9 +615,12 @@
             empty.style.display = 'none';
 
             tbody.innerHTML = top.map(s => `
-                <tr>
+                <tr class="${s.is_new ? 'new-job' : ''}">
                     <td><span class="score ${scoreClass(s.total_score)}">${s.total_score}</span></td>
-                    <td>${s.cluster_match ? `<span class="cluster ${s.cluster_match}">${s.cluster_match}</span>` : '-'}</td>
+                    <td>
+                        ${s.is_new ? '<span class="badge-new">NEW</span>' : ''}
+                        ${s.cluster_match ? `<span class="cluster ${s.cluster_match}">${s.cluster_match}</span>` : '-'}
+                    </td>
                     <td>
                         <div class="job-title-cell">
                             <a href="${s.job.url}" target="_blank" class="title">${escHtml(s.job.title)}</a>
@@ -603,6 +631,9 @@
                     <td>
                         <div class="score-details">${escHtml(s.matched_title || '')}</div>
                         <div class="score-details">${escHtml(s.reasoning)}</div>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-archive" onclick="archiveJob('${s.job.id}')" title="Archive">✕</button>
                     </td>
                 </tr>
             `).join('');
@@ -637,9 +668,12 @@
             empty.style.display = 'none';
 
             tbody.innerHTML = filtered.map(s => `
-                <tr>
+                <tr class="${s.is_new ? 'new-job' : ''}">
                     <td><span class="score ${scoreClass(s.total_score)}">${s.total_score}</span></td>
-                    <td>${s.cluster_match ? `<span class="cluster ${s.cluster_match}">${s.cluster_match}</span>` : '-'}</td>
+                    <td>
+                        ${s.is_new ? '<span class="badge-new">NEW</span>' : ''}
+                        ${s.cluster_match ? `<span class="cluster ${s.cluster_match}">${s.cluster_match}</span>` : '-'}
+                    </td>
                     <td>
                         <div class="job-title-cell">
                             <a href="${s.job.url}" target="_blank" class="title">${escHtml(s.job.title)}</a>
@@ -652,12 +686,26 @@
                     <td><span class="status ${s.job.status}">${s.job.status}</span></td>
                     <td>
                         <a href="${s.job.url}" target="_blank" class="btn btn-sm">Open</a>
+                        <button class="btn btn-sm btn-archive" onclick="archiveJob('${s.job.id}')" title="Archive — won't show again">✕</button>
                     </td>
                 </tr>
             `).join('');
         }
 
         function filterJobs() { renderAllJobs(); }
+
+        async function archiveJob(jobId) {
+            try {
+                await api(`jobs/${jobId}/status?status=archived`, 'PATCH');
+                // Remove from both lists
+                topScoredJobs = topScoredJobs.filter(s => s.job.id !== jobId);
+                allScoredJobs = allScoredJobs.filter(s => s.job.id !== jobId);
+                renderTopJobs();
+                renderAllJobs();
+            } catch (e) {
+                showToast('Archive failed: ' + e.message, 'error');
+            }
+        }
 
         // --- Companies ---
         async function loadCompanies() {

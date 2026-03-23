@@ -11,9 +11,9 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def reset_store():
+def reset_store(tmp_path):
     """Reset the job store before each test by patching the singleton."""
-    fresh = JobStore()
+    fresh = JobStore(db_path=tmp_path / "test.db")
     with patch("app.services.job_store.job_store", fresh), \
          patch("app.api.routes.job_store", fresh), \
          patch("app.services.scrape_orchestrator.job_store", fresh):

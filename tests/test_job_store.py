@@ -1,4 +1,7 @@
-"""Tests for the in-memory job store."""
+"""Tests for the SQLite-backed job store."""
+
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -7,9 +10,9 @@ from app.services.job_store import JobStore
 
 
 @pytest.fixture
-def store():
-    """Fresh store for each test."""
-    return JobStore()
+def store(tmp_path):
+    """Fresh store with temp DB for each test."""
+    return JobStore(db_path=tmp_path / "test_jobs.db")
 
 
 def _make_job(title="Test Job", url="https://example.com/1", **kw) -> JobListing:
@@ -98,3 +101,39 @@ class TestJobStore:
     def test_update_status_nonexistent(self, store):
         result = store.update_status("nonexistent", JobStatus.APPLIED)
         assert result is None
+
+    def test_persistence_across_instances(self, tmp_path):
+        """Jobs survive creating a new JobStore instance (simulates restart)."""
+        db = tmp_path / "persist.db"
+        store1 = JobStore(db_path=db)
+        store1.add(_make_job(url="https://example.com/persist"))
+        assert store1.count() == 1
+
+        # New instance, same DB
+        store2 = JobStore(db_path=db)
+        assert store2.count() == 1
+        assert store2.exists_by_url("https://example.com/persist")
+
+    def test_is_new_this_session(self, tmp_path):
+        """Jobs from previous sessions are marked as not new."""
+        db = tmp_path / "session.db"
+        store1 = JobStore(db_path=db)
+        store1.add(_make_job(url="https://example.com/old"))
+
+        # New session
+        store2 = JobStore(db_path=db)
+        assert store2.is_new_this_session("https://example.com/old") is False
+        store2.add(_make_job(url="https://example.com/new"))
+        assert store2.is_new_this_session("https://example.com/new") is True
+
+    def test_duplicate_url_ignored(self, store):
+        store.add(_make_job(url="https://example.com/dup"))
+        store.add(_make_job(url="https://example.com/dup"))
+        assert store.count() == 1
+
+    def test_count_exclude_archived(self, store):
+        j1 = store.add(_make_job(url="https://example.com/1"))
+        store.add(_make_job(url="https://example.com/2"))
+        store.update_status(j1.id, JobStatus.ARCHIVED)
+        assert store.count() == 2
+        assert store.count(exclude_archived=True) == 1

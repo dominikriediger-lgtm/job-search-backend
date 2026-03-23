@@ -102,19 +102,28 @@ def score_single_job(job: JobListing):
     return score_job(job)
 
 
-@router.get("/jobs/scored/all", response_model=list[ScoredJob])
-def get_scored_jobs(include_below_threshold: bool = False):
+@router.get("/jobs/scored/all")
+def get_scored_jobs(include_below_threshold: bool = False, include_archived: bool = False):
     """Score and rank all stored jobs.
 
-    By default only returns jobs above the min score threshold.
-    Pass include_below_threshold=true to see everything.
+    By default excludes archived jobs and jobs below the min score threshold.
     """
-    jobs = [j for j in job_store.get_all() if _is_location_relevant(j)]
+    all_jobs = job_store.get_all()
+    jobs = [j for j in all_jobs if _is_location_relevant(j)]
+    if not include_archived:
+        jobs = [j for j in jobs if j.status != JobStatus.ARCHIVED]
     if include_below_threshold:
         scored = [score_job(job) for job in jobs]
         scored.sort(key=lambda s: s.total_score, reverse=True)
-        return scored
-    return score_and_rank_jobs(jobs)
+    else:
+        scored = score_and_rank_jobs(jobs)
+    # Mark which jobs are new this session
+    result = []
+    for s in scored:
+        d = s.model_dump()
+        d["is_new"] = job_store.is_new_this_session(s.job.url)
+        result.append(d)
+    return result
 
 
 @router.get("/scrapers")
