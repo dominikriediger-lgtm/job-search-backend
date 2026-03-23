@@ -14,7 +14,8 @@ JOB_TITLES = [
     JobTitle(
         title="AI Transformation Manager",
         cluster=ClusterPriority.A,
-        keywords=["ai transformation", "digital transformation", "ai strategy", "process automation"],
+        keywords=["ai transformation", "digital transformation", "ai strategy", "process automation",
+                  "ki-transformation", "generative ai", "ai adoption"],
     ),
     JobTitle(
         title="Revenue Operations Manager",
@@ -81,7 +82,7 @@ JOB_TITLES = [
     JobTitle(
         title="Fractional AI Transformation Lead",
         cluster=ClusterPriority.C,
-        keywords=["fractional ai", "interim ai", "ai consultant"],
+        keywords=["fractional ai", "interim ai", "ai consultant", "freelance ai", "interim ki"],
     ),
     JobTitle(
         title="CRM & Automation Consultant",
@@ -112,7 +113,12 @@ JOB_TITLES = [
     JobTitle(
         title="AI Implementation Lead",
         cluster=ClusterPriority.A,
-        keywords=["ai implementation", "ai rollout", "ai deployment"],
+        keywords=["ai implementation", "ai rollout", "ai deployment", "ai integration", "ki-implementierung"],
+    ),
+    JobTitle(
+        title="AI Change Manager",
+        cluster=ClusterPriority.A,
+        keywords=["ai change management", "ai adoption", "ai transformation", "ki change", "ai enablement"],
     ),
     JobTitle(
         title="Customer Operations Lead",
@@ -134,6 +140,19 @@ JOB_TITLES = [
         title="Business Intelligence Manager",
         cluster=ClusterPriority.B,
         keywords=["business intelligence", "bi manager", "analytics manager", "data analytics"],
+    ),
+    # AI Consulting / Advisory roles
+    JobTitle(
+        title="AI Consultant",
+        cluster=ClusterPriority.B,
+        keywords=["ai consultant", "ki-berater", "ai advisory", "ai beratung",
+                  "artificial intelligence consultant", "generative ai consultant"],
+    ),
+    JobTitle(
+        title="AI Strategy Consultant",
+        cluster=ClusterPriority.B,
+        keywords=["ai strategy", "ki-strategie", "ai strategy consultant",
+                  "ai transformation consultant", "enterprise ai"],
     ),
 ]
 
