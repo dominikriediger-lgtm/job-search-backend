@@ -119,6 +119,22 @@ JOB_TITLES = [
         cluster=ClusterPriority.A,
         keywords=["customer ops", "customer operations", "customer success ops"],
     ),
+    # DACH-market specific titles
+    JobTitle(
+        title="Head of Revenue Operations",
+        cluster=ClusterPriority.A,
+        keywords=["head of revops", "head revenue operations", "leiter revenue operations"],
+    ),
+    JobTitle(
+        title="Sales Operations Manager",
+        cluster=ClusterPriority.A,
+        keywords=["sales ops", "sales operations", "vertriebssteuerung"],
+    ),
+    JobTitle(
+        title="Business Intelligence Manager",
+        cluster=ClusterPriority.B,
+        keywords=["business intelligence", "bi manager", "analytics manager", "data analytics"],
+    ),
 ]
 
 COMPANY_FILTER = CompanyFilter(
@@ -140,6 +156,12 @@ COMPANY_FILTER = CompanyFilter(
         "traditional-automotive",
         "old-fashioned-corporate",
         "gpt-wrapper",
+        "gambling",
+        "casino",
+        "tobacco",
+        "weapons-trading",
+        "adult",
+        "crypto-scam",
     ],
     preferred_company_types=[
         "scale-up",
