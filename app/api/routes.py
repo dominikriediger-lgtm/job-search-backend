@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from app.data.profile_seed import CANDIDATE_PROFILE
 from app.data.target_companies import TARGET_COMPANIES, get_career_urls
 from app.models.schemas import JobListing, JobStatus, ScoredJob
-from app.services.company_discovery import discover_companies
+from app.services.company_discovery import add_runtime_company, discover_companies, get_all_companies
 from app.services.job_store import job_store
 from app.services.scrape_orchestrator import (
     crawl_single_company,
@@ -169,8 +169,8 @@ async def google_custom_query(query: str):
 
 @router.get("/companies")
 def list_target_companies():
-    """List all target companies we monitor."""
-    return TARGET_COMPANIES
+    """List all target companies (static + runtime-added)."""
+    return get_all_companies()
 
 
 @router.get("/companies/careers")
@@ -179,8 +179,21 @@ def list_career_urls():
     return get_career_urls()
 
 
+@router.post("/companies/add")
+def add_company(company: dict):
+    """Add a new company to the crawl list at runtime.
+
+    Required: name, careers_url
+    Optional: sector, ats, size_estimate, funding_eur, why
+
+    Example:
+    {"name": "CoolStartup", "sector": "saas", "careers_url": "https://coolstartup.com/careers"}
+    """
+    return add_runtime_company(company)
+
+
 @router.post("/discover/companies")
-async def discover_new_companies(max_queries: int = 6):
+async def discover_new_companies(max_queries: int = 8):
     """Search news/press for recently funded startups near München.
 
     Uses SerpAPI to find funding rounds, awards, and press mentions.

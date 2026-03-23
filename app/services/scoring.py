@@ -1,5 +1,7 @@
 """Job scoring engine - matches jobs against candidate profile."""
 
+import re
+
 from app.core.config import settings
 from app.data.profile_seed import CANDIDATE_PROFILE
 from app.models.schemas import (
@@ -7,6 +9,25 @@ from app.models.schemas import (
     JobListing,
     ScoredJob,
     WorkMode,
+)
+
+# Seniority detection patterns
+_JUNIOR_SIGNALS = re.compile(
+    r"\b(intern\b|internship|praktik|werkstudent|working student|"
+    r"junior\b|entry.level|graduate\b|trainee|azubi|ausbildung|"
+    r"berufseinsteiger|student)\b",
+    re.IGNORECASE,
+)
+_SENIOR_SIGNALS = re.compile(
+    r"\b(senior|lead|head of|director|vp |vice president|"
+    r"principal|staff\b|c-level|chief|managing director|"
+    r"experienced|8\+?\s*years?|10\+?\s*years?)\b",
+    re.IGNORECASE,
+)
+_MID_SIGNALS = re.compile(
+    r"\b(manager|3\+?\s*years?|5\+?\s*years?|mid.?level|"
+    r"berufserfahrung|experienced)\b",
+    re.IGNORECASE,
 )
 
 
@@ -203,6 +224,33 @@ def score_salary(job: JobListing) -> float:
     return max(0.0, min(100.0, score))
 
 
+def score_seniority(job: JobListing) -> tuple[float, str]:
+    """Score seniority fit. Candidate has 8+ years experience.
+
+    Returns (score, reasoning_note).
+    """
+    text = f"{job.title} {job.description[:1000]}"
+    title_lower = _normalize(job.title)
+
+    # Hard penalty for junior/intern
+    if _JUNIOR_SIGNALS.search(text):
+        # Unless title also says senior/lead/manager
+        if _SENIOR_SIGNALS.search(job.title):
+            return 60.0, ""
+        return 10.0, "Junior/Intern level - seniority mismatch"
+
+    # Bonus for senior/lead/head titles
+    if _SENIOR_SIGNALS.search(job.title):
+        return 90.0, "Senior/Lead level - good seniority fit"
+
+    # Mid-level is acceptable
+    if _MID_SIGNALS.search(text):
+        return 65.0, ""
+
+    # Unknown seniority - neutral
+    return 50.0, ""
+
+
 def score_job(job: JobListing) -> ScoredJob:
     """Calculate the total weighted score for a job listing."""
     title_score, cluster, matched_title = score_title_match(job)
@@ -211,10 +259,15 @@ def score_job(job: JobListing) -> ScoredJob:
     tech_score = score_tech_depth(job)
     ai_score = score_ai_resilience(job)
     salary_sc = score_salary(job)
+    seniority_sc, seniority_note = score_seniority(job)
 
     w = settings
+    # Seniority acts as a multiplier on the title score
+    # A junior job with perfect title match should still score low
+    adjusted_title = title_score * (seniority_sc / 100.0)
+
     total = (
-        title_score * w.weight_title_match
+        adjusted_title * w.weight_title_match
         + company_score * w.weight_company_fit
         + location_sc * w.weight_location
         + tech_score * w.weight_tech_depth
@@ -233,6 +286,8 @@ def score_job(job: JobListing) -> ScoredJob:
         reasoning_parts.append("Low tech depth - possible light-tech")
     if ai_score >= 70:
         reasoning_parts.append("AI-resilient role")
+    if seniority_note:
+        reasoning_parts.append(seniority_note)
 
     return ScoredJob(
         job=job,

@@ -260,8 +260,13 @@ def build_boolean_query(
     if site_filter:
         query += f" {site_filter}"
 
-    # Exclusions
-    default_exclude = ["intern", "praktikum", "werkstudent", "internship", "working student"]
+    # Exclusions — filter out junior/intern level (candidate has 8+ years experience)
+    default_exclude = [
+        "intern", "internship", "praktikum", "praktikant",
+        "werkstudent", "working student",
+        "junior", "trainee", "azubi", "ausbildung",
+        "graduate program", "entry level", "berufseinsteiger",
+    ]
     all_exclude = default_exclude + (exclude or [])
     for ex in all_exclude:
         query += f" -{ex}"

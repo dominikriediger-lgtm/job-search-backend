@@ -7,6 +7,7 @@ import re
 from app.data.profile_seed import CANDIDATE_PROFILE
 from app.data.target_companies import TARGET_COMPANIES
 from app.models.schemas import ClusterPriority, JobListing, WorkMode
+from app.services.company_discovery import get_all_companies
 from app.services.job_store import job_store
 from app.services.scrapers.adzuna import AdzunaScraper
 from app.services.scrapers.arbeitnow import ArbeitnowScraper
@@ -64,6 +65,32 @@ def _is_location_relevant(job: JobListing) -> bool:
         return True
     # Unknown location - keep it (might be relevant)
     return True
+
+
+# Seniority: exclude jobs clearly below the candidate's level (8+ years experience)
+_JUNIOR_RE = re.compile(
+    r"\b(intern\b|internship|praktik|werkstudent|working student|"
+    r"junior\b|entry.level|graduate\b|trainee|azubi|ausbildung|"
+    r"duales studium|dual.student|berufseinsteiger|studentische.hilfskraft|"
+    r"student assistant|co.?op\b|apprentice)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_seniority_relevant(job: JobListing) -> bool:
+    """Exclude jobs that are clearly junior/intern level."""
+    text = f"{job.title} {job.description[:500]}"
+    if _JUNIOR_RE.search(text):
+        # Exception: if title also contains senior/lead/head/manager, keep it
+        if re.search(r"\b(senior|lead|head|manager|director|principal|vp|chief)\b", job.title, re.IGNORECASE):
+            return True
+        return False
+    return True
+
+
+def _is_job_relevant(job: JobListing) -> bool:
+    """Combined filter: location + seniority."""
+    return _is_location_relevant(job) and _is_seniority_relevant(job)
 
 
 ALL_SCRAPERS: list[BaseScraper] = [
@@ -221,6 +248,7 @@ async def _crawl_company_ats(company: dict) -> list[JobListing]:
 
 async def crawl_target_companies() -> dict:
     """Crawl all target company career pages via ATS APIs + HTML fallback."""
+    all_companies = get_all_companies()
     # Run all company crawls concurrently (with semaphore to avoid flooding)
     sem = asyncio.Semaphore(5)
 
@@ -228,7 +256,7 @@ async def crawl_target_companies() -> dict:
         async with sem:
             return company["name"], await _crawl_company_ats(company)
 
-    tasks = [_crawl_with_sem(c) for c in TARGET_COMPANIES]
+    tasks = [_crawl_with_sem(c) for c in all_companies]
     results = await asyncio.gather(*tasks)
 
     per_company = {}
@@ -237,13 +265,13 @@ async def crawl_target_companies() -> dict:
     filtered_count = 0
 
     for name, jobs in results:
-        company = next(c for c in TARGET_COMPANIES if c["name"] == name)
+        company = next(c for c in all_companies if c["name"] == name)
         ats = company.get("ats")
 
-        relevant = [j for j in jobs if _is_location_relevant(j)]
+        relevant = [j for j in jobs if _is_job_relevant(j)]
         skipped = len(jobs) - len(relevant)
         if skipped:
-            logger.info("%s: filtered out %d jobs with irrelevant location", name, skipped)
+            logger.info("%s: filtered out %d jobs (location/seniority)", name, skipped)
         filtered_count += skipped
 
         per_company[name] = {
@@ -264,9 +292,9 @@ async def crawl_target_companies() -> dict:
     blocked = [name for name, info in per_company.items() if info["status"] != "ok"]
 
     return {
-        "companies_crawled": len(TARGET_COMPANIES),
+        "companies_crawled": len(all_companies),
         "total_jobs_found": len(all_jobs),
-        "location_filtered": filtered_count,
+        "filtered_out": filtered_count,
         "new_added": new_count,
         "blocked_companies": blocked,
         "total_in_store": job_store.count(),
@@ -277,8 +305,9 @@ async def crawl_target_companies() -> dict:
 
 async def crawl_single_company(company_name: str) -> dict:
     """Crawl a single company's career page by name."""
+    all_companies = get_all_companies()
     company = next(
-        (c for c in TARGET_COMPANIES if c["name"].lower() == company_name.lower()),
+        (c for c in all_companies if c["name"].lower() == company_name.lower()),
         None,
     )
     if not company:
@@ -314,7 +343,7 @@ async def run_google_boolean_search() -> dict:
     for q in queries:
         logger.info("Running query: %s", q["name"])
         jobs = await google_scraper.search(q["query"], max_results=20)
-        relevant = [j for j in jobs if _is_location_relevant(j)]
+        relevant = [j for j in jobs if _is_job_relevant(j)]
         filtered = len(jobs) - len(relevant)
         total_filtered += filtered
 
