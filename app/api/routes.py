@@ -3,8 +3,14 @@
 from fastapi import APIRouter, HTTPException
 
 from app.data.profile_seed import CANDIDATE_PROFILE
+from app.data.target_companies import TARGET_COMPANIES, get_career_urls
 from app.models.schemas import JobListing, JobStatus, ScoredJob
 from app.services.job_store import job_store
+from app.services.scrape_orchestrator import (
+    get_active_scrapers,
+    run_full_search,
+    scrape_all_sources,
+)
 from app.services.scoring import score_and_rank_jobs, score_job
 from app.services.search import generate_search_queries, get_supported_sources
 
@@ -94,6 +100,36 @@ def get_scored_jobs():
     """Score and rank all stored jobs."""
     jobs = job_store.get_all()
     return score_and_rank_jobs(jobs)
+
+
+@router.get("/scrapers")
+def list_scrapers():
+    """Show all scrapers and their configuration status."""
+    return get_active_scrapers()
+
+
+@router.post("/scrape")
+async def scrape_query(query: str, location: str = "München", max_per_source: int = 25):
+    """Scrape all configured sources for a single query."""
+    return await scrape_all_sources(query, location, max_per_source)
+
+
+@router.post("/scrape/full")
+async def scrape_full():
+    """Run a full search across all target titles and all configured sources."""
+    return await run_full_search()
+
+
+@router.get("/companies")
+def list_target_companies():
+    """List all target companies we monitor."""
+    return TARGET_COMPANIES
+
+
+@router.get("/companies/careers")
+def list_career_urls():
+    """List all career page URLs for crawling."""
+    return get_career_urls()
 
 
 @router.get("/stats")

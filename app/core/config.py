@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     # Minimum score to surface a job
     min_score_threshold: float = 40
 
+    # Adzuna API (free: 250 calls/month, sign up at developer.adzuna.com)
+    adzuna_app_id: str = ""
+    adzuna_api_key: str = ""
+
+    # Firecrawl API (free: 500 credits/month, sign up at firecrawl.dev)
+    firecrawl_api_key: str = ""
+
     model_config = {"env_file": ".env", "env_prefix": "JOBSEARCH_"}
 
 
