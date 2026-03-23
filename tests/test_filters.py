@@ -29,8 +29,12 @@ class TestLocationFilter:
     def test_remote_in_location_string(self):
         assert _is_location_relevant(_make_job(location="Remote - Germany")) is True
 
-    def test_berlin_is_relevant(self):
-        assert _is_location_relevant(_make_job(location="Berlin")) is True
+    def test_berlin_not_relevant(self):
+        """Berlin is not relevant for München-focused search (unless remote)."""
+        assert _is_location_relevant(_make_job(location="Berlin")) is False
+
+    def test_hamburg_not_relevant(self):
+        assert _is_location_relevant(_make_job(location="Hamburg")) is False
 
     def test_san_francisco_not_relevant(self):
         assert _is_location_relevant(_make_job(location="San Francisco, CA")) is False

@@ -29,41 +29,74 @@ from app.services.scoring import score_and_rank_jobs
 
 logger = logging.getLogger(__name__)
 
-# Locations considered reachable from München area
-_GOOD_LOCATIONS_RE = re.compile(
-    r"münchen|munich|muc|remote|germany|deutschland|dach|"
-    r"berlin|hamburg|frankfurt|köln|cologne|düsseldorf|stuttgart|nürnberg|nuremberg|"
-    r"augsburg|ingolstadt|rosenheim|regensburg|salzburg|innsbruck|"
-    r"see posting|nicht angegeben|tbd",
+# München area — always relevant
+_MUNICH_AREA_RE = re.compile(
+    r"münchen|munich|muc\b|garching|freising|dachau|erding|starnberg|"
+    r"oberpfaffenhofen|planegg|martinsried|unterschleißheim|unterhaching|"
+    r"ottobrunn|haar\b|pullach|grünwald|ismaning|aschheim|kirchheim|"
+    r"augsburg|ingolstadt|rosenheim|regensburg|landshut|passau|"
+    r"salzburg|innsbruck|nürnberg|nuremberg",
     re.IGNORECASE,
 )
-# Locations that are clearly too far unless remote
-_BAD_LOCATIONS_RE = re.compile(
+
+# Remote / generic Germany — relevant (company might have Munich office)
+_REMOTE_OR_GENERIC_RE = re.compile(
+    r"remote|germany|deutschland|dach|europe|europa|"
+    r"see posting|nicht angegeben|tbd|multiple|flexible|various",
+    re.IGNORECASE,
+)
+
+# Other German cities — only keep if role is remote-friendly
+_OTHER_DE_CITIES_RE = re.compile(
+    r"\b(berlin|hamburg|frankfurt|köln|cologne|düsseldorf|stuttgart|"
+    r"hannover|dortmund|essen|leipzig|dresden|bremen|bonn|"
+    r"heidelberg|mannheim|karlsruhe|freiburg|saarbrücken|kiel|rostock|"
+    r"wolfsburg|braunschweig|münster|bielefeld|wiesbaden|mainz|"
+    r"aachen|kassel|potsdam|erfurt|jena|chemnitz)\b",
+    re.IGNORECASE,
+)
+
+# Clearly international — never relevant unless remote
+_INTERNATIONAL_RE = re.compile(
     r"\b(usa|us|united states|new york|san francisco|sf|bay area|boston|seattle|"
-    r"los angeles|la|london|uk|paris|france|amsterdam|singapore|sydney|tokyo|"
-    r"tel aviv|israel|india|bangalore|hyderabad|canada|toronto|vancouver|"
+    r"los angeles|london|uk|paris|france|amsterdam|netherlands|singapore|sydney|"
+    r"tokyo|tel aviv|israel|india|bangalore|hyderabad|canada|toronto|vancouver|"
     r"china|beijing|shanghai|brazil|são paulo|dubai|uae|chicago|austin|denver|"
-    r"washington dc|miami|atlanta|philadelphia|dallas|portland|"
-    r"heidelberg|mannheim|karlsruhe|freiburg|saarbrücken|kiel|rostock)\b",
+    r"washington dc|miami|atlanta|philadelphia|dallas|portland|ohio|"
+    r"dublin|lisbon|madrid|barcelona|milan|rome|warsaw|prague|budapest|"
+    r"copenhagen|stockholm|oslo|helsinki|zurich|zürich|bern|vienna|wien)\b",
     re.IGNORECASE,
 )
 
 
 def _is_location_relevant(job: JobListing) -> bool:
-    """Check if a job location is relevant (München area, major DE cities, or remote)."""
+    """Check if a job location is relevant — München area or remote."""
     loc = job.location or ""
+    loc_lower = loc.lower()
+
     # Remote jobs are always relevant
     if job.work_mode == WorkMode.REMOTE:
         return True
-    if "remote" in loc.lower():
+    if "remote" in loc_lower:
         return True
-    # If location matches a bad pattern AND not remote, skip
-    if _BAD_LOCATIONS_RE.search(loc):
+
+    # München area → always keep
+    if _MUNICH_AREA_RE.search(loc):
+        return True
+
+    # International → drop
+    if _INTERNATIONAL_RE.search(loc):
         return False
-    # If location matches good pattern, keep
-    if _GOOD_LOCATIONS_RE.search(loc):
+
+    # Other German cities (Berlin, Hamburg, etc.) → drop unless hybrid/remote
+    if _OTHER_DE_CITIES_RE.search(loc):
+        return False
+
+    # Generic "Germany" / "Remote" / unknown → keep
+    if _REMOTE_OR_GENERIC_RE.search(loc):
         return True
-    # Unknown location - keep it (might be relevant)
+
+    # Unknown location — keep but scoring will penalise
     return True
 
 

@@ -122,14 +122,22 @@ def score_location(job: JobListing) -> float:
     score = 50.0
     loc_lower = _normalize(job.location)
 
-    # Location match
-    munich_keywords = ["münchen", "munich", "muc"]
+    # Location match — München area is strongly preferred
+    munich_keywords = ["münchen", "munich", "muc", "garching", "planegg", "martinsried",
+                       "ismaning", "unterhaching", "ottobrunn", "unterschleißheim"]
+    other_de_cities = ["berlin", "hamburg", "frankfurt", "köln", "cologne", "düsseldorf",
+                       "stuttgart", "hannover", "dortmund", "essen", "leipzig", "dresden",
+                       "bremen", "bonn"]
     if any(kw in loc_lower for kw in munich_keywords):
         score += 30
-    elif "remote" in loc_lower or "germany" in loc_lower or "deutschland" in loc_lower:
-        score += 15
+    elif "remote" in loc_lower:
+        score += 20
+    elif "germany" in loc_lower or "deutschland" in loc_lower or "dach" in loc_lower:
+        score += 10
+    elif any(city in loc_lower for city in other_de_cities):
+        score -= 35  # strong penalty for non-Munich German cities
     else:
-        score -= 20
+        score -= 25
 
     # Work mode match
     if job.work_mode:
