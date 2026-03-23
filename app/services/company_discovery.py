@@ -51,7 +51,7 @@ _STOP_WORDS = {
 }
 
 
-async def discover_companies(max_queries: int = 8) -> dict:
+async def discover_companies(max_queries: int = 4) -> dict:
     """Search news for recently funded/awarded startups near München.
 
     Returns a list of discovered company mentions with source URLs.

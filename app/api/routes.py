@@ -193,7 +193,7 @@ def add_company(company: dict):
 
 
 @router.post("/discover/companies")
-async def discover_new_companies(max_queries: int = 8):
+async def discover_new_companies(max_queries: int = 4):
     """Search news/press for recently funded startups near München.
 
     Uses SerpAPI to find funding rounds, awards, and press mentions.

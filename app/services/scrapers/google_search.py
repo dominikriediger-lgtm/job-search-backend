@@ -34,6 +34,14 @@ class GoogleBooleanSearchScraper(BaseScraper):
     relevant job postings across all major platforms.
     """
 
+    # Session-level cache of already-seen URLs to avoid duplicates across queries
+    _seen_urls: set[str] = set()
+
+    @classmethod
+    def reset_cache(cls):
+        """Clear the URL cache (e.g. between full search runs)."""
+        cls._seen_urls.clear()
+
     @property
     def source_name(self) -> str:
         return "google_boolean"
@@ -168,6 +176,11 @@ class GoogleBooleanSearchScraper(BaseScraper):
             url = r["url"]
             title = r["title"]
             snippet = r.get("snippet", "")
+
+            # Skip already-seen URLs (dedup across queries)
+            if url in self._seen_urls:
+                continue
+            self._seen_urls.add(url)
 
             # Filter out non-job URLs
             if not self._is_job_url(url, title, snippet):
@@ -347,16 +360,23 @@ def build_boolean_query(
     return query
 
 
-def _batch_titles(titles: list[str], batch_size: int = 3) -> list[list[str]]:
+def _batch_titles(titles: list[str], batch_size: int = 5) -> list[list[str]]:
     """Split titles into small batches so queries stay short enough for Google."""
     return [titles[i:i + batch_size] for i in range(0, len(titles), batch_size)]
+
+
+# Combined site filter: all job platforms in one query
+_ALL_SITES = (
+    f"({SITE_LINKEDIN} OR {SITE_STEPSTONE} OR {SITE_INDEED} OR "
+    f"{SITE_GREENHOUSE} OR {SITE_LEVER} OR {SITE_ASHBY} OR {SITE_PERSONIO} OR {SITE_SMARTRECRUITERS})"
+)
 
 
 def generate_boolean_queries(job_titles: list[dict], location: str = "München") -> list[dict]:
     """Generate a set of boolean queries from the candidate profile.
 
-    Groups titles by cluster and creates targeted queries for different platforms.
-    Keeps each query short (max 3 titles) so Google/SerpAPI can handle them.
+    Optimized to minimize API calls: one combined query per title batch
+    instead of separate queries per platform.
     """
     queries = []
 
@@ -372,63 +392,29 @@ def generate_boolean_queries(job_titles: list[dict], location: str = "München")
 
     for cluster_key, titles in clusters.items():
         for i, batch in enumerate(_batch_titles(titles)):
-            suffix = f" (batch {i+1})" if len(titles) > 3 else ""
+            suffix = f" (batch {i+1})" if len(titles) > 5 else ""
 
-            # LinkedIn + major boards (most results)
+            # Single combined query covering all job sites (1 API call instead of 3)
             queries.append({
-                "name": f"Cluster {cluster_key} - LinkedIn{suffix}",
-                "query": build_boolean_query(batch, location, SITE_LINKEDIN),
+                "name": f"Cluster {cluster_key} - All platforms{suffix}",
+                "query": build_boolean_query(batch, location, _ALL_SITES),
                 "cluster": cluster_key,
-                "strategy": "linkedin",
+                "strategy": "combined",
             })
 
-            # ATS platforms (Greenhouse, Lever, Ashby, Personio)
-            ats_sites = f"({SITE_GREENHOUSE} OR {SITE_LEVER} OR {SITE_ASHBY} OR {SITE_PERSONIO})"
-            queries.append({
-                "name": f"Cluster {cluster_key} - ATS{suffix}",
-                "query": build_boolean_query(batch, location, ats_sites),
-                "cluster": cluster_key,
-                "strategy": "ats",
-            })
-
-            # German job boards
-            queries.append({
-                "name": f"Cluster {cluster_key} - StepStone/Indeed{suffix}",
-                "query": build_boolean_query(batch, location, GERMAN_JOB_BOARDS),
-                "cluster": cluster_key,
-                "strategy": "german",
-            })
-
-    # Special: AI/Tech focused query
-    ai_titles = [
-        "AI Transformation Manager",
-        "Head of Business Automation",
-        "AI Implementation Lead",
-    ]
+    # Special: CoS/FA for funded startups (no site filter = broader reach)
+    cos_titles = ["Chief of Staff", "Founder's Associate", "Strategy & Operations Manager"]
     queries.append({
-        "name": "AI/Tech Focus - Scale-ups",
-        "query": build_boolean_query(
-            ai_titles, location,
-            include_keywords=["scale-up", "startup"],
-            exclude=["senior developer", "senior engineer"],
-        ),
-        "cluster": "A",
-        "strategy": "ai_focused",
-    })
-
-    # Special: Chief of Staff / Founder's Associate
-    cos_titles = ["Chief of Staff", "Founder's Associate"]
-    queries.append({
-        "name": "CoS/FA - Funded Startups",
+        "name": "CoS/FA/StratOps - Funded Startups",
         "query": build_boolean_query(
             cos_titles, location,
-            include_keywords=["series A", "series B", "funded"],
+            include_keywords=["series A", "series B", "funded", "startup"],
         ),
         "cluster": "B",
         "strategy": "cos_focused",
     })
 
-    # Special: RevOps without location restriction (remote-friendly)
+    # Special: RevOps remote (broader location)
     queries.append({
         "name": "RevOps - Remote Germany",
         "query": build_boolean_query(
