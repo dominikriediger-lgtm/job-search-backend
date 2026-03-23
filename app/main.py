@@ -1,6 +1,12 @@
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 

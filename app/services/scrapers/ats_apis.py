@@ -4,9 +4,13 @@ Greenhouse, Lever, and Ashby all expose free, public JSON APIs
 for their job boards. No API key required.
 """
 
+import logging
+
 import httpx
 
 from app.models.schemas import JobListing, WorkMode
+
+logger = logging.getLogger(__name__)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; JobSearchAgent/1.0)",
@@ -41,7 +45,8 @@ async def scrape_greenhouse(board_slug: str, company_name: str, eu: bool = False
                 alt_host = "boards-api.greenhouse.io" if eu else "boards-api.eu.greenhouse.io"
                 resp = await client.get(f"https://{alt_host}/v1/boards/{board_slug}/jobs?content=true")
             resp.raise_for_status()
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            logger.warning("Greenhouse API failed for %s (slug=%s): %s", company_name, board_slug, exc)
             return []
 
     data = resp.json()
@@ -59,20 +64,22 @@ async def scrape_greenhouse(board_slug: str, company_name: str, eu: bool = False
             url=job_url,
             source="greenhouse_api",
         ))
+    logger.info("Greenhouse %s: %d jobs found", company_name, len(jobs))
     return jobs
 
 
-async def scrape_lever(company_slug: str, company_name: str) -> list[JobListing]:
+async def scrape_lever(board_slug: str, company_name: str) -> list[JobListing]:
     """Fetch jobs from Lever postings API.
 
     API: https://api.lever.co/v0/postings/{slug}
     """
-    url = f"https://api.lever.co/v0/postings/{company_slug}?mode=json"
+    url = f"https://api.lever.co/v0/postings/{board_slug}?mode=json"
     async with httpx.AsyncClient(timeout=15.0, headers=HEADERS) as client:
         try:
             resp = await client.get(url)
             resp.raise_for_status()
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            logger.warning("Lever API failed for %s (slug=%s): %s", company_name, board_slug, exc)
             return []
 
     data = resp.json()
@@ -92,6 +99,7 @@ async def scrape_lever(company_slug: str, company_name: str) -> list[JobListing]
             url=job_url,
             source="lever_api",
         ))
+    logger.info("Lever %s: %d jobs found", company_name, len(jobs))
     return jobs
 
 
@@ -105,7 +113,8 @@ async def scrape_ashby(board_slug: str, company_name: str) -> list[JobListing]:
         try:
             resp = await client.get(url)
             resp.raise_for_status()
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            logger.warning("Ashby API failed for %s (slug=%s): %s", company_name, board_slug, exc)
             return []
 
     data = resp.json()
@@ -125,20 +134,22 @@ async def scrape_ashby(board_slug: str, company_name: str) -> list[JobListing]:
             url=job_url,
             source="ashby_api",
         ))
+    logger.info("Ashby %s: %d jobs found", company_name, len(jobs))
     return jobs
 
 
-async def scrape_personio_xml(company_slug: str, company_name: str) -> list[JobListing]:
+async def scrape_personio_xml(board_slug: str, company_name: str) -> list[JobListing]:
     """Fetch jobs from Personio job board XML feed.
 
     URL pattern: https://{slug}.jobs.personio.de/xml
     """
-    url = f"https://{company_slug}.jobs.personio.de/xml"
+    url = f"https://{board_slug}.jobs.personio.de/xml"
     async with httpx.AsyncClient(timeout=15.0, headers=HEADERS) as client:
         try:
             resp = await client.get(url)
             resp.raise_for_status()
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            logger.warning("Personio API failed for %s (slug=%s): %s", company_name, board_slug, exc)
             return []
 
     # Parse simple XML without lxml dependency
@@ -151,7 +162,7 @@ async def scrape_personio_xml(company_slug: str, company_name: str) -> list[JobL
         location = _xml_tag(pos, "office")
         department = _xml_tag(pos, "department")
         job_id = _xml_tag(pos, "id")
-        job_url = f"https://{company_slug}.jobs.personio.de/job/{job_id}" if job_id else ""
+        job_url = f"https://{board_slug}.jobs.personio.de/job/{job_id}" if job_id else ""
 
         if title:
             jobs.append(JobListing(
@@ -163,20 +174,22 @@ async def scrape_personio_xml(company_slug: str, company_name: str) -> list[JobL
                 url=job_url,
                 source="personio_api",
             ))
+    logger.info("Personio %s: %d jobs found", company_name, len(jobs))
     return jobs
 
 
-async def scrape_smartrecruiters(company_slug: str, company_name: str) -> list[JobListing]:
+async def scrape_smartrecruiters(board_slug: str, company_name: str) -> list[JobListing]:
     """Fetch jobs from SmartRecruiters API.
 
     API: https://api.smartrecruiters.com/v1/companies/{slug}/postings
     """
-    url = f"https://api.smartrecruiters.com/v1/companies/{company_slug}/postings"
+    url = f"https://api.smartrecruiters.com/v1/companies/{board_slug}/postings"
     async with httpx.AsyncClient(timeout=15.0, headers=HEADERS) as client:
         try:
             resp = await client.get(url)
             resp.raise_for_status()
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            logger.warning("SmartRecruiters API failed for %s (slug=%s): %s", company_name, board_slug, exc)
             return []
 
     data = resp.json()
@@ -199,6 +212,7 @@ async def scrape_smartrecruiters(company_slug: str, company_name: str) -> list[J
             url=job_url,
             source="smartrecruiters_api",
         ))
+    logger.info("SmartRecruiters %s: %d jobs found", company_name, len(jobs))
     return jobs
 
 

@@ -76,10 +76,13 @@ class GoogleBooleanSearchScraper(BaseScraper):
                 resp = await client.get("https://serpapi.com/search.json", params=params)
                 resp.raise_for_status()
             except httpx.HTTPError as exc:
-                logger.warning("SerpAPI request failed: %s", exc)
+                logger.warning("SerpAPI request failed: %s (check your SERPAPI_KEY at serpapi.com/manage-api-key)", exc)
                 return []
 
         data = resp.json()
+        if "error" in data:
+            logger.warning("SerpAPI error: %s", data["error"])
+            return []
         results = []
         for item in data.get("organic_results", []):
             results.append({
