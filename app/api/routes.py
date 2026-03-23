@@ -8,6 +8,7 @@ from app.models.schemas import JobListing, JobStatus, ScoredJob
 from app.services.company_discovery import add_runtime_company, discover_companies, get_all_companies
 from app.services.job_store import job_store
 from app.services.scrape_orchestrator import (
+    _is_location_relevant,
     crawl_single_company,
     crawl_target_companies,
     get_active_scrapers,
@@ -108,7 +109,7 @@ def get_scored_jobs(include_below_threshold: bool = False):
     By default only returns jobs above the min score threshold.
     Pass include_below_threshold=true to see everything.
     """
-    jobs = job_store.get_all()
+    jobs = [j for j in job_store.get_all() if _is_location_relevant(j)]
     if include_below_threshold:
         scored = [score_job(job) for job in jobs]
         scored.sort(key=lambda s: s.total_score, reverse=True)

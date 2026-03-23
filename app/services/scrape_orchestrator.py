@@ -70,29 +70,29 @@ _INTERNATIONAL_RE = re.compile(
 
 
 def _is_location_relevant(job: JobListing) -> bool:
-    """Check if a job location is relevant — München area or remote."""
+    """Check if a job location is relevant — München area or remote (EU/DACH only)."""
     loc = job.location or ""
     loc_lower = loc.lower()
-
-    # Remote jobs are always relevant
-    if job.work_mode == WorkMode.REMOTE:
-        return True
-    if "remote" in loc_lower:
-        return True
 
     # München area → always keep
     if _MUNICH_AREA_RE.search(loc):
         return True
 
-    # International → drop
+    # International location → drop even if tagged remote (e.g. "Remote, US, Ohio")
     if _INTERNATIONAL_RE.search(loc):
         return False
 
-    # Other German cities (Berlin, Hamburg, etc.) → drop unless hybrid/remote
+    # Other German cities (Berlin, Hamburg, etc.) → drop
     if _OTHER_DE_CITIES_RE.search(loc):
         return False
 
-    # Generic "Germany" / "Remote" / unknown → keep
+    # Remote without a specific non-Munich location → keep
+    if job.work_mode == WorkMode.REMOTE:
+        return True
+    if "remote" in loc_lower:
+        return True
+
+    # Generic "Germany" / unknown → keep
     if _REMOTE_OR_GENERIC_RE.search(loc):
         return True
 
@@ -193,8 +193,12 @@ async def scrape_all_sources(
 
     all_jobs = []
     new_count = 0
+    filtered_count = 0
     for job_list in results:
         for job in job_list:
+            if not _is_job_relevant(job):
+                filtered_count += 1
+                continue
             if not job_store.exists_by_url(job.url):
                 job_store.add(job)
                 new_count += 1
@@ -204,6 +208,7 @@ async def scrape_all_sources(
         "total_found": len(all_jobs),
         "new_added": new_count,
         "duplicates_skipped": len(all_jobs) - new_count,
+        "filtered_location_seniority": filtered_count,
     }
 
 
@@ -371,9 +376,11 @@ async def crawl_single_company(company_name: str) -> dict:
         return {"error": f"Company '{company_name}' not found in target list"}
 
     jobs = await _crawl_company_ats(company)
+    relevant = [j for j in jobs if _is_job_relevant(j)]
+    filtered = len(jobs) - len(relevant)
 
     new_count = 0
-    for job in jobs:
+    for job in relevant:
         if not job_store.exists_by_url(job.url):
             job_store.add(job)
             new_count += 1
@@ -383,8 +390,9 @@ async def crawl_single_company(company_name: str) -> dict:
         "url": company["careers_url"],
         "ats": company.get("ats", {}).get("platform", "html") if company.get("ats") else "html",
         "jobs_found": len(jobs),
+        "filtered_location_seniority": filtered,
         "new_added": new_count,
-        "jobs": [{"title": j.title, "url": j.url, "location": j.location} for j in jobs],
+        "jobs": [{"title": j.title, "url": j.url, "location": j.location} for j in relevant],
     }
 
 
@@ -442,9 +450,10 @@ async def run_google_boolean_search() -> dict:
 async def run_single_boolean_query(query: str) -> dict:
     """Run a single custom boolean query through Google."""
     jobs = await google_scraper.search(query, max_results=30)
+    relevant = [j for j in jobs if _is_job_relevant(j)]
 
     new_count = 0
-    for job in jobs:
+    for job in relevant:
         if not job_store.exists_by_url(job.url):
             job_store.add(job)
             new_count += 1
