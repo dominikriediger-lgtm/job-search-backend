@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Search Agent</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0f1117;
+            --surface: #1a1d27;
+            --surface2: #232733;
+            --border: #2e3345;
+            --text: #e4e6ef;
+            --text2: #9ca3b8;
+            --accent: #6c5ce7;
+            --accent2: #a29bfe;
+            --green: #00b894;
+            --yellow: #fdcb6e;
+            --red: #e17055;
+            --blue: #74b9ff;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.5;
+        }
+
+        /* Layout */
+        .app { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 24px;
+        }
+
+        header h1 { font-size: 20px; font-weight: 600; }
+        header h1 span { color: var(--accent2); }
+
+        .header-actions { display: flex; gap: 8px; }
+
+        /* Navigation Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            color: var(--text2);
+            cursor: pointer;
+            font-size: 14px;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab:hover { color: var(--text); }
+        .tab.active { color: var(--accent2); border-bottom-color: var(--accent); }
+
+        /* Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .stat-card .label { font-size: 12px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-card .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+        .stat-card .value.green { color: var(--green); }
+        .stat-card .value.blue { color: var(--blue); }
+        .stat-card .value.yellow { color: var(--yellow); }
+        .stat-card .value.accent { color: var(--accent2); }
+
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn:hover { background: var(--surface2); border-color: var(--accent); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover { background: #5a4bd6; }
+
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+        /* Action bar */
+        .action-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .action-bar .separator {
+            width: 1px;
+            height: 24px;
+            background: var(--border);
+            margin: 0 4px;
+        }
+
+        /* Tables */
+        .table-wrap {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        table { width: 100%; border-collapse: collapse; }
+
+        th {
+            text-align: left;
+            padding: 12px 16px;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text2);
+            background: var(--surface2);
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+        }
+
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background: var(--surface2); }
+
+        /* Score badge */
+        .score {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .score.high { background: rgba(0,184,148,0.15); color: var(--green); }
+        .score.medium { background: rgba(253,203,110,0.15); color: var(--yellow); }
+        .score.low { background: rgba(225,112,85,0.15); color: var(--red); }
+
+        /* Cluster badge */
+        .cluster {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .cluster.A { background: rgba(108,92,231,0.2); color: var(--accent2); }
+        .cluster.B { background: rgba(116,185,255,0.2); color: var(--blue); }
+        .cluster.C { background: rgba(253,203,110,0.2); color: var(--yellow); }
+
+        /* Status badge */
+        .status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .status.new { background: rgba(116,185,255,0.15); color: var(--blue); }
+        .status.applied { background: rgba(108,92,231,0.15); color: var(--accent2); }
+        .status.interview { background: rgba(0,184,148,0.15); color: var(--green); }
+        .status.rejected { background: rgba(225,112,85,0.15); color: var(--red); }
+
+        /* Company cards */
+        .company-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 12px;
+        }
+
+        .company-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            transition: border-color 0.2s;
+        }
+
+        .company-card:hover { border-color: var(--accent); }
+
+        .company-card .name { font-weight: 600; font-size: 15px; }
+        .company-card .meta { font-size: 12px; color: var(--text2); margin-top: 4px; }
+        .company-card .why { font-size: 12px; color: var(--text2); margin-top: 8px; font-style: italic; }
+        .company-card .actions { margin-top: 10px; display: flex; gap: 6px; }
+
+        /* Boolean queries */
+        .query-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+
+        .query-card .name { font-weight: 600; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+        .query-card .query-text {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 12px;
+            color: var(--text2);
+            margin-top: 8px;
+            padding: 10px;
+            background: var(--bg);
+            border-radius: 6px;
+            word-break: break-all;
+            line-height: 1.6;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 14px 20px;
+            font-size: 13px;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+            max-width: 400px;
+        }
+
+        .toast.success { border-left: 3px solid var(--green); }
+        .toast.error { border-left: 3px solid var(--red); }
+        .toast.loading { border-left: 3px solid var(--yellow); }
+
+        @keyframes slideIn {
+            from { transform: translateX(100px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        /* Section titles */
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-title .count {
+            font-size: 12px;
+            color: var(--text2);
+            font-weight: 400;
+        }
+
+        /* Loading spinner */
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent2);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Tab content */
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Link styling */
+        a { color: var(--accent2); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        /* Empty state */
+        .empty {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text2);
+        }
+
+        .empty .icon { font-size: 40px; margin-bottom: 12px; }
+
+        /* Filter bar */
+        .filter-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .filter-bar select, .filter-bar input {
+            padding: 6px 12px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 13px;
+        }
+
+        .filter-bar input { width: 250px; }
+        .filter-bar select:focus, .filter-bar input:focus { outline: none; border-color: var(--accent); }
+
+        /* Job detail row */
+        .job-title-cell { max-width: 300px; }
+        .job-title-cell .title { font-weight: 500; }
+        .job-title-cell .source { font-size: 11px; color: var(--text2); }
+
+        /* Score breakdown tooltip */
+        .score-details {
+            font-size: 11px;
+            color: var(--text2);
+            margin-top: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header>
+            <h1><span>Job Search</span> Agent</h1>
+            <div class="header-actions">
+                <button class="btn btn-sm" onclick="refreshAll()">Refresh</button>
+                <a href="/docs" target="_blank" class="btn btn-sm">API Docs</a>
+            </div>
+        </header>
+
+        <div class="tabs">
+            <button class="tab active" data-tab="dashboard">Dashboard</button>
+            <button class="tab" data-tab="jobs">Jobs</button>
+            <button class="tab" data-tab="companies">Companies</button>
+            <button class="tab" data-tab="search">Google Search</button>
+        </div>
+
+        <!-- DASHBOARD TAB -->
+        <div id="dashboard" class="tab-content active">
+            <div class="stats-grid" id="stats-grid"></div>
+
+            <div class="action-bar">
+                <button class="btn btn-primary" onclick="runAction('crawl/companies', 'Crawling 22 career pages...')">
+                    Crawl All Companies
+                </button>
+                <button class="btn btn-primary" onclick="runAction('google/search', 'Running 14 Google Boolean searches...')">
+                    Google Boolean Search
+                </button>
+                <button class="btn" onclick="runAction('scrape/full', 'Running full API scrape...')">
+                    Full API Scrape
+                </button>
+                <div class="separator"></div>
+                <button class="btn btn-sm" onclick="switchTab('jobs')">View Jobs</button>
+            </div>
+
+            <div class="section-title">Top Scored Jobs</div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Score</th>
+                            <th>Cluster</th>
+                            <th>Job Title</th>
+                            <th>Company</th>
+                            <th>Location</th>
+                            <th>Match</th>
+                        </tr>
+                    </thead>
+                    <tbody id="top-jobs-body"></tbody>
+                </table>
+            </div>
+            <div id="top-jobs-empty" class="empty" style="display:none">
+                <div class="icon">&#128269;</div>
+                <p>No jobs yet. Click "Crawl All Companies" or "Google Boolean Search" to start.</p>
+            </div>
+        </div>
+
+        <!-- JOBS TAB -->
+        <div id="jobs" class="tab-content">
+            <div class="filter-bar">
+                <input type="text" id="job-search" placeholder="Search jobs..." oninput="filterJobs()">
+                <select id="job-cluster-filter" onchange="filterJobs()">
+                    <option value="">All Clusters</option>
+                    <option value="A">Cluster A</option>
+                    <option value="B">Cluster B</option>
+                    <option value="C">Cluster C</option>
+                </select>
+                <select id="job-status-filter" onchange="filterJobs()">
+                    <option value="">All Status</option>
+                    <option value="new">New</option>
+                    <option value="applied">Applied</option>
+                    <option value="interview">Interview</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+                <select id="job-sort" onchange="filterJobs()">
+                    <option value="score">Sort by Score</option>
+                    <option value="date">Sort by Date</option>
+                    <option value="company">Sort by Company</option>
+                </select>
+            </div>
+            <div id="jobs-count" class="section-title"></div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Score</th>
+                            <th>Cluster</th>
+                            <th>Job</th>
+                            <th>Company</th>
+                            <th>Location</th>
+                            <th>Source</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="jobs-body"></tbody>
+                </table>
+            </div>
+            <div id="jobs-empty" class="empty" style="display:none">
+                <div class="icon">&#128188;</div>
+                <p>No jobs found. Run a search first!</p>
+            </div>
+        </div>
+
+        <!-- COMPANIES TAB -->
+        <div id="companies" class="tab-content">
+            <div class="action-bar">
+                <button class="btn btn-primary" onclick="runAction('crawl/companies', 'Crawling all career pages...')">
+                    Crawl All Career Pages
+                </button>
+                <span id="companies-count" class="section-title" style="margin:0"></span>
+            </div>
+            <div class="company-grid" id="companies-grid"></div>
+        </div>
+
+        <!-- SEARCH TAB -->
+        <div id="search" class="tab-content">
+            <div class="action-bar">
+                <button class="btn btn-primary" onclick="runAction('google/search', 'Running all boolean queries...')">
+                    Run All Queries
+                </button>
+                <div class="separator"></div>
+                <input type="text" id="custom-query" placeholder='Custom: ("Chief of Staff") "München" site:linkedin.com/jobs' style="flex:1;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;min-width:300px;">
+                <button class="btn" onclick="runCustomQuery()">Search</button>
+            </div>
+            <div class="section-title">Generated Boolean Queries <span class="count" id="queries-count"></span></div>
+            <div id="queries-list"></div>
+        </div>
+    </div>
+
+    <script>
+        const API = '/api/v1';
+        let allScoredJobs = [];
+
+        // --- Tab switching ---
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+        });
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        // --- Toast notifications ---
+        function showToast(msg, type = 'success') {
+            const existing = document.querySelector('.toast');
+            if (existing) existing.remove();
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            if (type !== 'loading') {
+                setTimeout(() => toast.remove(), 4000);
+            }
+            return toast;
+        }
+
+        // --- API calls ---
+        async function api(path, method = 'GET') {
+            const resp = await fetch(`${API}/${path}`, { method });
+            return resp.json();
+        }
+
+        // --- Stats ---
+        async function loadStats() {
+            try {
+                const stats = await api('stats');
+                const grid = document.getElementById('stats-grid');
+                grid.innerHTML = `
+                    <div class="stat-card">
+                        <div class="label">Total Jobs</div>
+                        <div class="value blue">${stats.total_jobs}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Above Threshold</div>
+                        <div class="value green">${stats.jobs_above_threshold}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Avg Score</div>
+                        <div class="value accent">${stats.avg_score}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Top Score</div>
+                        <div class="value yellow">${stats.top_score}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Applied</div>
+                        <div class="value">${stats.by_status?.applied || 0}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Interviews</div>
+                        <div class="value green">${stats.by_status?.interview || 0}</div>
+                    </div>
+                `;
+            } catch (e) {
+                console.error('Stats load failed:', e);
+            }
+        }
+
+        // --- Scored Jobs ---
+        function scoreClass(score) {
+            if (score >= 70) return 'high';
+            if (score >= 50) return 'medium';
+            return 'low';
+        }
+
+        async function loadScoredJobs() {
+            try {
+                allScoredJobs = await api('jobs/scored/all');
+                renderTopJobs();
+                renderAllJobs();
+            } catch (e) {
+                console.error('Jobs load failed:', e);
+            }
+        }
+
+        function renderTopJobs() {
+            const tbody = document.getElementById('top-jobs-body');
+            const empty = document.getElementById('top-jobs-empty');
+            const top = allScoredJobs.slice(0, 10);
+
+            if (top.length === 0) {
+                tbody.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+
+            tbody.innerHTML = top.map(s => `
+                <tr>
+                    <td><span class="score ${scoreClass(s.total_score)}">${s.total_score}</span></td>
+                    <td>${s.cluster_match ? `<span class="cluster ${s.cluster_match}">${s.cluster_match}</span>` : '-'}</td>
+                    <td>
+                        <div class="job-title-cell">
+                            <a href="${s.job.url}" target="_blank" class="title">${escHtml(s.job.title)}</a>
+                        </div>
+                    </td>
+                    <td>${escHtml(s.job.company)}</td>
+                    <td>${escHtml(s.job.location)}</td>
+                    <td>
+                        <div class="score-details">${escHtml(s.matched_title || '')}</div>
+                        <div class="score-details">${escHtml(s.reasoning)}</div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderAllJobs() {
+            const search = document.getElementById('job-search').value.toLowerCase();
+            const cluster = document.getElementById('job-cluster-filter').value;
+            const status = document.getElementById('job-status-filter').value;
+            const sort = document.getElementById('job-sort').value;
+
+            let filtered = allScoredJobs.filter(s => {
+                if (search && !`${s.job.title} ${s.job.company} ${s.job.location}`.toLowerCase().includes(search)) return false;
+                if (cluster && s.cluster_match !== cluster) return false;
+                if (status && s.job.status !== status) return false;
+                return true;
+            });
+
+            if (sort === 'company') filtered.sort((a, b) => a.job.company.localeCompare(b.job.company));
+            else if (sort === 'date') filtered.sort((a, b) => new Date(b.job.discovered_at) - new Date(a.job.discovered_at));
+            // default: score (already sorted)
+
+            document.getElementById('jobs-count').textContent = `${filtered.length} Jobs`;
+            const tbody = document.getElementById('jobs-body');
+            const empty = document.getElementById('jobs-empty');
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+            empty.style.display = 'none';
+
+            tbody.innerHTML = filtered.map(s => `
+                <tr>
+                    <td><span class="score ${scoreClass(s.total_score)}">${s.total_score}</span></td>
+                    <td>${s.cluster_match ? `<span class="cluster ${s.cluster_match}">${s.cluster_match}</span>` : '-'}</td>
+                    <td>
+                        <div class="job-title-cell">
+                            <a href="${s.job.url}" target="_blank" class="title">${escHtml(s.job.title)}</a>
+                            <div class="source">${escHtml(s.job.source)}</div>
+                        </div>
+                    </td>
+                    <td>${escHtml(s.job.company)}</td>
+                    <td>${escHtml(s.job.location)}</td>
+                    <td><span class="source">${escHtml(s.job.source)}</span></td>
+                    <td><span class="status ${s.job.status}">${s.job.status}</span></td>
+                    <td>
+                        <a href="${s.job.url}" target="_blank" class="btn btn-sm">Open</a>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function filterJobs() { renderAllJobs(); }
+
+        // --- Companies ---
+        async function loadCompanies() {
+            try {
+                const companies = await api('companies');
+                document.getElementById('companies-count').textContent = `${companies.length} Target Companies`;
+                const grid = document.getElementById('companies-grid');
+
+                grid.innerHTML = companies.map(c => `
+                    <div class="company-card">
+                        <div class="name">${escHtml(c.name)}</div>
+                        <div class="meta">
+                            <span class="cluster ${sectorCluster(c.sector)}">${escHtml(c.sector)}</span>
+                            &middot; ~${c.size_estimate} employees
+                            &middot; ${formatFunding(c.funding_eur)}
+                        </div>
+                        <div class="why">${escHtml(c.why)}</div>
+                        <div class="actions">
+                            <button class="btn btn-sm" onclick="crawlCompany('${escHtml(c.name)}')">Crawl Jobs</button>
+                            <a href="${c.careers_url}" target="_blank" class="btn btn-sm">Career Page</a>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Companies load failed:', e);
+            }
+        }
+
+        function sectorCluster(sector) {
+            const map = { ai: 'A', saas: 'A', fintech: 'A', defensetech: 'A', software: 'A', healthtech: 'A', sportstech: 'B', deeptech: 'B', spacetech: 'B', energytech: 'B' };
+            return map[sector] || 'C';
+        }
+
+        function formatFunding(eur) {
+            if (eur >= 1_000_000_000) return `€${(eur / 1_000_000_000).toFixed(1)}B`;
+            if (eur >= 1_000_000) return `€${(eur / 1_000_000).toFixed(0)}M`;
+            return `€${(eur / 1_000).toFixed(0)}K`;
+        }
+
+        // --- Boolean Queries ---
+        async function loadQueries() {
+            try {
+                const queries = await api('google/queries');
+                document.getElementById('queries-count').textContent = `(${queries.length})`;
+                const list = document.getElementById('queries-list');
+
+                list.innerHTML = queries.map(q => `
+                    <div class="query-card">
+                        <div class="name">
+                            <span class="cluster ${q.cluster}">${q.cluster}</span>
+                            ${escHtml(q.name)}
+                            <span style="color:var(--text2);font-size:12px;font-weight:400">${q.strategy}</span>
+                        </div>
+                        <div class="query-text">${escHtml(q.query)}</div>
+                        <div style="margin-top:8px">
+                            <button class="btn btn-sm" onclick="copyQuery(this, '${escJs(q.query)}')">Copy</button>
+                            <a href="https://www.google.com/search?q=${encodeURIComponent(q.query)}" target="_blank" class="btn btn-sm">Open in Google</a>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Queries load failed:', e);
+            }
+        }
+
+        function copyQuery(btn, query) {
+            navigator.clipboard.writeText(query);
+            btn.textContent = 'Copied!';
+            setTimeout(() => btn.textContent = 'Copy', 1500);
+        }
+
+        // --- Actions ---
+        async function runAction(endpoint, msg) {
+            const toast = showToast(msg, 'loading');
+            try {
+                const result = await api(endpoint, 'POST');
+                toast.remove();
+                const newJobs = result.new_added || result.total_jobs_found || 0;
+                showToast(`Done! ${newJobs} new jobs found.`, 'success');
+                refreshAll();
+            } catch (e) {
+                toast.remove();
+                showToast(`Error: ${e.message}`, 'error');
+            }
+        }
+
+        async function crawlCompany(name) {
+            const toast = showToast(`Crawling ${name}...`, 'loading');
+            try {
+                const result = await api(`crawl/company/${encodeURIComponent(name)}`, 'POST');
+                toast.remove();
+                showToast(`${name}: ${result.jobs_found || 0} jobs found`, 'success');
+                refreshAll();
+            } catch (e) {
+                toast.remove();
+                showToast(`Error crawling ${name}`, 'error');
+            }
+        }
+
+        async function runCustomQuery() {
+            const query = document.getElementById('custom-query').value;
+            if (!query) return;
+            const toast = showToast('Searching Google...', 'loading');
+            try {
+                const result = await api(`google/custom?query=${encodeURIComponent(query)}`, 'POST');
+                toast.remove();
+                showToast(`Found ${result.found || 0} results`, 'success');
+                refreshAll();
+            } catch (e) {
+                toast.remove();
+                showToast(`Search error: ${e.message}`, 'error');
+            }
+        }
+
+        // --- Helpers ---
+        function escHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function escJs(str) {
+            return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+        }
+
+        // --- Init ---
+        async function refreshAll() {
+            await Promise.all([loadStats(), loadScoredJobs(), loadCompanies(), loadQueries()]);
+        }
+
+        refreshAll();
+    </script>
+</body>
+</html>
