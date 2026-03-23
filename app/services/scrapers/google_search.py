@@ -72,7 +72,7 @@ class GoogleBooleanSearchScraper(BaseScraper):
 
         async with httpx.AsyncClient(timeout=20.0) as client:
             try:
-                logger.debug("SerpAPI request: q=%s num=%d", query[:80], num_results)
+                logger.info("SerpAPI query: %s", query[:120])
                 resp = await client.get("https://serpapi.com/search.json", params=params)
                 resp.raise_for_status()
             except httpx.HTTPError as exc:
@@ -269,15 +269,21 @@ def build_boolean_query(
     return query
 
 
+def _batch_titles(titles: list[str], batch_size: int = 3) -> list[list[str]]:
+    """Split titles into small batches so queries stay short enough for Google."""
+    return [titles[i:i + batch_size] for i in range(0, len(titles), batch_size)]
+
+
 def generate_boolean_queries(job_titles: list[dict], location: str = "München") -> list[dict]:
     """Generate a set of boolean queries from the candidate profile.
 
     Groups titles by cluster and creates targeted queries for different platforms.
+    Keeps each query short (max 3 titles) so Google/SerpAPI can handle them.
     """
     queries = []
 
     # Group titles by cluster
-    clusters = {}
+    clusters: dict[str, list[str]] = {}
     for jt in job_titles:
         cluster = jt.cluster.value if hasattr(jt, 'cluster') else jt.get("cluster", "A")
         cluster_key = cluster.value if hasattr(cluster, 'value') else cluster
@@ -287,70 +293,73 @@ def generate_boolean_queries(job_titles: list[dict], location: str = "München")
         clusters[cluster_key].append(title)
 
     for cluster_key, titles in clusters.items():
-        # Query 1: All job boards (broad)
-        queries.append({
-            "name": f"Cluster {cluster_key} - All Platforms",
-            "query": build_boolean_query(titles, location, ALL_JOB_SITES),
-            "cluster": cluster_key,
-            "strategy": "broad",
-        })
+        for i, batch in enumerate(_batch_titles(titles)):
+            suffix = f" (batch {i+1})" if len(titles) > 3 else ""
 
-        # Query 2: German job boards
-        queries.append({
-            "name": f"Cluster {cluster_key} - German Boards",
-            "query": build_boolean_query(titles, location, GERMAN_JOB_BOARDS),
-            "cluster": cluster_key,
-            "strategy": "german",
-        })
+            # LinkedIn + major boards (most results)
+            queries.append({
+                "name": f"Cluster {cluster_key} - LinkedIn{suffix}",
+                "query": build_boolean_query(batch, location, SITE_LINKEDIN),
+                "cluster": cluster_key,
+                "strategy": "linkedin",
+            })
 
-        # Query 3: Open web (no site filter - catches company career pages)
-        queries.append({
-            "name": f"Cluster {cluster_key} - Open Web",
-            "query": build_boolean_query(
-                titles, location,
-                include_keywords=["career", "karriere", "jobs", "stelle"],
-            ),
-            "cluster": cluster_key,
-            "strategy": "open_web",
-        })
+            # ATS platforms (Greenhouse, Lever, Ashby, Personio)
+            ats_sites = f"({SITE_GREENHOUSE} OR {SITE_LEVER} OR {SITE_ASHBY} OR {SITE_PERSONIO})"
+            queries.append({
+                "name": f"Cluster {cluster_key} - ATS{suffix}",
+                "query": build_boolean_query(batch, location, ats_sites),
+                "cluster": cluster_key,
+                "strategy": "ats",
+            })
 
-        # Query 4: ATS platforms (Greenhouse, Lever, Ashby)
-        ats_sites = f"({SITE_GREENHOUSE} OR {SITE_LEVER} OR {SITE_ASHBY})"
-        queries.append({
-            "name": f"Cluster {cluster_key} - ATS Platforms",
-            "query": build_boolean_query(titles, location, ats_sites),
-            "cluster": cluster_key,
-            "strategy": "ats",
-        })
+            # German job boards
+            queries.append({
+                "name": f"Cluster {cluster_key} - StepStone/Indeed{suffix}",
+                "query": build_boolean_query(batch, location, GERMAN_JOB_BOARDS),
+                "cluster": cluster_key,
+                "strategy": "german",
+            })
 
     # Special: AI/Tech focused query
     ai_titles = [
         "AI Transformation Manager",
         "Head of Business Automation",
         "AI Implementation Lead",
-        "Digital Transformation Manager",
     ]
     queries.append({
         "name": "AI/Tech Focus - Scale-ups",
         "query": build_boolean_query(
             ai_titles, location,
-            include_keywords=["scale-up", "startup", "series"],
+            include_keywords=["scale-up", "startup"],
             exclude=["senior developer", "senior engineer"],
         ),
         "cluster": "A",
         "strategy": "ai_focused",
     })
 
-    # Special: Chief of Staff / Founder's Associate at funded startups
-    cos_titles = ["Chief of Staff", "Founder's Associate", "Founders Associate"]
+    # Special: Chief of Staff / Founder's Associate
+    cos_titles = ["Chief of Staff", "Founder's Associate"]
     queries.append({
         "name": "CoS/FA - Funded Startups",
         "query": build_boolean_query(
             cos_titles, location,
-            include_keywords=["series A", "series B", "funded", "venture"],
+            include_keywords=["series A", "series B", "funded"],
         ),
         "cluster": "B",
         "strategy": "cos_focused",
+    })
+
+    # Special: RevOps without location restriction (remote-friendly)
+    queries.append({
+        "name": "RevOps - Remote Germany",
+        "query": build_boolean_query(
+            ["Revenue Operations Manager", "RevOps Manager", "Revenue Operations Lead"],
+            location="Germany",
+            site_filter=SITE_LINKEDIN,
+        ),
+        "cluster": "A",
+        "strategy": "revops_remote",
     })
 
     return queries

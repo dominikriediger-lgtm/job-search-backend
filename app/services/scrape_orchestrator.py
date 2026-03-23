@@ -2,10 +2,11 @@
 
 import asyncio
 import logging
+import re
 
 from app.data.profile_seed import CANDIDATE_PROFILE
 from app.data.target_companies import TARGET_COMPANIES
-from app.models.schemas import ClusterPriority, JobListing
+from app.models.schemas import ClusterPriority, JobListing, WorkMode
 from app.services.job_store import job_store
 from app.services.scrapers.adzuna import AdzunaScraper
 from app.services.scrapers.arbeitnow import ArbeitnowScraper
@@ -26,6 +27,44 @@ from app.services.scrapers.google_search import (
 from app.services.scoring import score_and_rank_jobs
 
 logger = logging.getLogger(__name__)
+
+# Locations considered reachable from München area
+_GOOD_LOCATIONS_RE = re.compile(
+    r"münchen|munich|muc|remote|germany|deutschland|dach|"
+    r"berlin|hamburg|frankfurt|köln|cologne|düsseldorf|stuttgart|nürnberg|nuremberg|"
+    r"augsburg|ingolstadt|rosenheim|regensburg|salzburg|innsbruck|"
+    r"see posting|nicht angegeben|tbd",
+    re.IGNORECASE,
+)
+# Locations that are clearly too far unless remote
+_BAD_LOCATIONS_RE = re.compile(
+    r"\b(usa|us|united states|new york|san francisco|sf|bay area|boston|seattle|"
+    r"los angeles|la|london|uk|paris|france|amsterdam|singapore|sydney|tokyo|"
+    r"tel aviv|israel|india|bangalore|hyderabad|canada|toronto|vancouver|"
+    r"china|beijing|shanghai|brazil|são paulo|dubai|uae|chicago|austin|denver|"
+    r"washington dc|miami|atlanta|philadelphia|dallas|portland|"
+    r"heidelberg|mannheim|karlsruhe|freiburg|saarbrücken|kiel|rostock)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_location_relevant(job: JobListing) -> bool:
+    """Check if a job location is relevant (München area, major DE cities, or remote)."""
+    loc = job.location or ""
+    # Remote jobs are always relevant
+    if job.work_mode == WorkMode.REMOTE:
+        return True
+    if "remote" in loc.lower():
+        return True
+    # If location matches a bad pattern AND not remote, skip
+    if _BAD_LOCATIONS_RE.search(loc):
+        return False
+    # If location matches good pattern, keep
+    if _GOOD_LOCATIONS_RE.search(loc):
+        return True
+    # Unknown location - keep it (might be relevant)
+    return True
+
 
 ALL_SCRAPERS: list[BaseScraper] = [
     AdzunaScraper(),
@@ -195,22 +234,31 @@ async def crawl_target_companies() -> dict:
     per_company = {}
     all_jobs = []
     new_count = 0
+    filtered_count = 0
 
     for name, jobs in results:
         company = next(c for c in TARGET_COMPANIES if c["name"] == name)
         ats = company.get("ats")
+
+        relevant = [j for j in jobs if _is_location_relevant(j)]
+        skipped = len(jobs) - len(relevant)
+        if skipped:
+            logger.info("%s: filtered out %d jobs with irrelevant location", name, skipped)
+        filtered_count += skipped
+
         per_company[name] = {
             "url": company["careers_url"],
             "ats": ats["platform"] if ats else "html",
             "jobs_found": len(jobs),
-            "status": "ok" if jobs else "no_jobs_found",
+            "jobs_relevant": len(relevant),
+            "status": "ok" if relevant else ("no_relevant_jobs" if jobs else "no_jobs_found"),
         }
 
-        for job in jobs:
+        for job in relevant:
             if not job_store.exists_by_url(job.url):
                 job_store.add(job)
                 new_count += 1
-        all_jobs.extend(jobs)
+        all_jobs.extend(relevant)
 
     scored = score_and_rank_jobs(job_store.get_all())
     blocked = [name for name, info in per_company.items() if info["status"] != "ok"]
@@ -218,6 +266,7 @@ async def crawl_target_companies() -> dict:
     return {
         "companies_crawled": len(TARGET_COMPANIES),
         "total_jobs_found": len(all_jobs),
+        "location_filtered": filtered_count,
         "new_added": new_count,
         "blocked_companies": blocked,
         "total_in_store": job_store.count(),
@@ -259,23 +308,30 @@ async def run_google_boolean_search() -> dict:
 
     total_found = 0
     total_new = 0
+    total_filtered = 0
     results_per_query = []
 
     for q in queries:
+        logger.info("Running query: %s", q["name"])
         jobs = await google_scraper.search(q["query"], max_results=20)
+        relevant = [j for j in jobs if _is_location_relevant(j)]
+        filtered = len(jobs) - len(relevant)
+        total_filtered += filtered
+
         new_count = 0
-        for job in jobs:
+        for job in relevant:
             if not job_store.exists_by_url(job.url):
                 job_store.add(job)
                 new_count += 1
 
-        total_found += len(jobs)
+        total_found += len(relevant)
         total_new += new_count
         results_per_query.append({
             "name": q["name"],
             "cluster": q["cluster"],
             "strategy": q["strategy"],
             "found": len(jobs),
+            "relevant": len(relevant),
             "new": new_count,
         })
 
@@ -284,6 +340,7 @@ async def run_google_boolean_search() -> dict:
     return {
         "queries_run": len(queries),
         "total_found": total_found,
+        "location_filtered": total_filtered,
         "new_added": total_new,
         "total_in_store": job_store.count(),
         "jobs_above_threshold": len(scored),

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from app.data.profile_seed import CANDIDATE_PROFILE
 from app.data.target_companies import TARGET_COMPANIES, get_career_urls
 from app.models.schemas import JobListing, JobStatus, ScoredJob
+from app.services.company_discovery import discover_companies
 from app.services.job_store import job_store
 from app.services.scrape_orchestrator import (
     crawl_single_company,
@@ -176,6 +177,16 @@ def list_target_companies():
 def list_career_urls():
     """List all career page URLs for crawling."""
     return get_career_urls()
+
+
+@router.post("/discover/companies")
+async def discover_new_companies(max_queries: int = 6):
+    """Search news/press for recently funded startups near München.
+
+    Uses SerpAPI to find funding rounds, awards, and press mentions.
+    Returns company names, source URLs, and snippets for manual review.
+    """
+    return await discover_companies(max_queries)
 
 
 @router.get("/stats")

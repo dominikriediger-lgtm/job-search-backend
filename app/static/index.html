@@ -373,14 +373,17 @@
             <div class="stats-grid" id="stats-grid"></div>
 
             <div class="action-bar">
-                <button class="btn btn-primary" onclick="runAction('crawl/companies', 'Crawling 22 career pages...')">
+                <button class="btn btn-primary" onclick="runAction('crawl/companies', 'Crawling career pages...')">
                     Crawl All Companies
                 </button>
-                <button class="btn btn-primary" onclick="runAction('google/search', 'Running 14 Google Boolean searches...')">
+                <button class="btn btn-primary" onclick="runAction('google/search', 'Running Google Boolean searches...')">
                     Google Boolean Search
                 </button>
                 <button class="btn" onclick="runAction('scrape/full', 'Running full API scrape...')">
                     Full API Scrape
+                </button>
+                <button class="btn" onclick="runAction('discover/companies', 'Searching news for new startups...')" style="background: var(--yellow); color: #222;">
+                    Discover Startups
                 </button>
                 <div class="separator"></div>
                 <button class="btn btn-sm" onclick="switchTab('jobs')">View Jobs</button>
