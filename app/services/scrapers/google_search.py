@@ -7,7 +7,6 @@ Prefers SerpAPI when SERPAPI_KEY is set; falls back to direct scraping.
 
 import asyncio
 import logging
-import os
 import re
 import time
 from urllib.parse import quote_plus, urljoin
@@ -15,6 +14,7 @@ from urllib.parse import quote_plus, urljoin
 import httpx
 from bs4 import BeautifulSoup
 
+from app.core.config import settings
 from app.models.schemas import JobListing, WorkMode
 from app.services.scrapers.base import BaseScraper
 
@@ -57,7 +57,7 @@ class GoogleBooleanSearchScraper(BaseScraper):
 
     async def _serpapi_search(self, query: str, num_results: int = 20) -> list[dict]:
         """Execute a search via SerpAPI JSON endpoint."""
-        api_key = os.environ.get("SERPAPI_KEY")
+        api_key = settings.serpapi_key
         if not api_key:
             return []
 
@@ -149,7 +149,7 @@ class GoogleBooleanSearchScraper(BaseScraper):
 
     async def _google_search(self, query: str, num_results: int = 20) -> list[dict]:
         """Execute a Google search — tries SerpAPI first, falls back to direct scraping."""
-        api_key = os.environ.get("SERPAPI_KEY")
+        api_key = settings.serpapi_key
         if api_key:
             logger.debug("SERPAPI_KEY set, using SerpAPI as primary backend")
             results = await self._serpapi_search(query, num_results)
