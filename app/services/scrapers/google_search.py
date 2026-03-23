@@ -2,10 +2,14 @@
 
 Uses Google search with boolean operators to find job postings across
 LinkedIn, StepStone, Indeed, Greenhouse, Lever, and company career pages.
-No API key needed - uses regular search with httpx + BeautifulSoup.
+Prefers SerpAPI when SERPAPI_KEY is set; falls back to direct scraping.
 """
 
+import asyncio
+import logging
+import os
 import re
+import time
 from urllib.parse import quote_plus, urljoin
 
 import httpx
@@ -13,6 +17,8 @@ from bs4 import BeautifulSoup
 
 from app.models.schemas import JobListing, WorkMode
 from app.services.scrapers.base import BaseScraper
+
+logger = logging.getLogger(__name__)
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -36,6 +42,8 @@ class GoogleBooleanSearchScraper(BaseScraper):
     def display_name(self) -> str:
         return "Google Boolean Search"
 
+    _last_request_time: float = 0.0
+
     def is_configured(self) -> bool:
         return True
 
@@ -47,16 +55,68 @@ class GoogleBooleanSearchScraper(BaseScraper):
             return WorkMode.HYBRID
         return None
 
-    async def _google_search(self, query: str, num_results: int = 20) -> list[dict]:
-        """Execute a Google search and parse organic results."""
+    async def _serpapi_search(self, query: str, num_results: int = 20) -> list[dict]:
+        """Execute a search via SerpAPI JSON endpoint."""
+        api_key = os.environ.get("SERPAPI_KEY")
+        if not api_key:
+            return []
+
+        params = {
+            "q": query,
+            "num": num_results,
+            "hl": "de",
+            "gl": "de",
+            "engine": "google",
+            "api_key": api_key,
+        }
+
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            try:
+                logger.debug("SerpAPI request: q=%s num=%d", query[:80], num_results)
+                resp = await client.get("https://serpapi.com/search.json", params=params)
+                resp.raise_for_status()
+            except httpx.HTTPError as exc:
+                logger.warning("SerpAPI request failed: %s", exc)
+                return []
+
+        data = resp.json()
+        results = []
+        for item in data.get("organic_results", []):
+            results.append({
+                "title": item.get("title", ""),
+                "url": item.get("link", ""),
+                "snippet": item.get("snippet", ""),
+            })
+
+        logger.info("SerpAPI returned %d organic results", len(results))
+        return results
+
+    async def _direct_google_search(self, query: str, num_results: int = 20) -> list[dict]:
+        """Execute a direct Google search with rate limiting."""
+        # Rate-limit: wait at least 2s between direct requests
+        now = time.monotonic()
+        elapsed = now - GoogleBooleanSearchScraper._last_request_time
+        if elapsed < 2.0:
+            delay = 2.0 - elapsed
+            logger.debug("Rate-limiting direct Google request: sleeping %.1fs", delay)
+            await asyncio.sleep(delay)
+        GoogleBooleanSearchScraper._last_request_time = time.monotonic()
+
         encoded = quote_plus(query)
         url = f"https://www.google.com/search?q={encoded}&num={num_results}&hl=de"
 
         async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, headers=HEADERS) as client:
             try:
                 resp = await client.get(url)
+                if resp.status_code in (429, 403):
+                    logger.warning(
+                        "Google returned HTTP %d for direct search — possible rate limit",
+                        resp.status_code,
+                    )
+                    return []
                 resp.raise_for_status()
-            except httpx.HTTPError:
+            except httpx.HTTPError as exc:
+                logger.warning("Direct Google search failed: %s", exc)
                 return []
 
         soup = BeautifulSoup(resp.text, "lxml")
@@ -81,7 +141,20 @@ class GoogleBooleanSearchScraper(BaseScraper):
                 "snippet": snippet_tag.get_text(strip=True) if snippet_tag else "",
             })
 
+        logger.info("Direct Google search returned %d results", len(results))
         return results
+
+    async def _google_search(self, query: str, num_results: int = 20) -> list[dict]:
+        """Execute a Google search — tries SerpAPI first, falls back to direct scraping."""
+        api_key = os.environ.get("SERPAPI_KEY")
+        if api_key:
+            logger.debug("SERPAPI_KEY set, using SerpAPI as primary backend")
+            results = await self._serpapi_search(query, num_results)
+            if results:
+                return results
+            logger.warning("SerpAPI returned no results, falling back to direct scraping")
+
+        return await self._direct_google_search(query, num_results)
 
     async def search(self, query: str, location: str = "München", max_results: int = 25) -> list[JobListing]:
         """Search Google with the provided boolean query."""
@@ -149,8 +222,9 @@ SITE_GREENHOUSE = 'site:boards.greenhouse.io'
 SITE_LEVER = 'site:jobs.lever.co'
 SITE_ASHBY = 'site:jobs.ashbyhq.com'
 SITE_PERSONIO = 'site:jobs.personio.de'
+SITE_SMARTRECRUITERS = 'site:careers.smartrecruiters.com'
 
-ALL_JOB_SITES = f"({SITE_LINKEDIN} OR {SITE_GREENHOUSE} OR {SITE_LEVER} OR {SITE_ASHBY} OR {SITE_PERSONIO})"
+ALL_JOB_SITES = f"({SITE_LINKEDIN} OR {SITE_GREENHOUSE} OR {SITE_LEVER} OR {SITE_ASHBY} OR {SITE_PERSONIO} OR {SITE_SMARTRECRUITERS})"
 GERMAN_JOB_BOARDS = f"({SITE_LINKEDIN} OR {SITE_STEPSTONE} OR {SITE_INDEED})"
 
 

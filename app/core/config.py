@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     # Firecrawl API (free: 500 credits/month, sign up at firecrawl.dev)
     firecrawl_api_key: str = ""
 
+    # SerpAPI (free: 100 searches/month, sign up at serpapi.com)
+    serpapi_key: str | None = None
+
     model_config = {"env_file": ".env", "env_prefix": "JOBSEARCH_"}
 
 
