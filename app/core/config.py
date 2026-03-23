@@ -1,13 +1,22 @@
+import logging
 from pathlib import Path
 
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 
+_logger = logging.getLogger(__name__)
+
 # Explicitly load .env into os.environ BEFORE pydantic-settings reads it.
 # pydantic-settings' built-in env_file support is unreliable on Windows
 # with long paths (OneDrive). python-dotenv handles this correctly.
 _ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(_ENV_FILE, override=False)
+if _ENV_FILE.exists():
+    load_dotenv(_ENV_FILE, override=False)
+else:
+    _logger.warning(
+        ".env file not found at %s — copy .env.example to .env and add your API keys!",
+        _ENV_FILE,
+    )
 
 
 class Settings(BaseSettings):
