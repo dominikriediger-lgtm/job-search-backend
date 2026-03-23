@@ -224,9 +224,9 @@ async def _crawl_company_ats(company: dict) -> list[JobListing]:
         scraper_fn = ATS_SCRAPERS.get(platform)
         if scraper_fn:
             try:
-                # Pass eu=True for Greenhouse EU companies
+                # Pass eu=True for Greenhouse/Lever EU companies
                 kwargs = {"board_slug": slug, "company_name": name}
-                if platform == "greenhouse" and ats.get("eu"):
+                if platform in ("greenhouse", "lever") and ats.get("eu"):
                     kwargs["eu"] = True
                 jobs = await scraper_fn(**kwargs)
                 if jobs:
@@ -249,12 +249,16 @@ async def _crawl_company_ats(company: dict) -> list[JobListing]:
 async def crawl_target_companies() -> dict:
     """Crawl all target company career pages via ATS APIs + HTML fallback."""
     all_companies = get_all_companies()
-    # Run all company crawls concurrently (with semaphore to avoid flooding)
-    sem = asyncio.Semaphore(5)
+    # Run company crawls concurrently — limit to 3 to avoid rate-limiting
+    sem = asyncio.Semaphore(3)
 
     async def _crawl_with_sem(company):
         async with sem:
-            return company["name"], await _crawl_company_ats(company)
+            try:
+                jobs = await _crawl_company_ats(company)
+                return company["name"], jobs, None
+            except Exception as e:
+                return company["name"], [], str(e)
 
     tasks = [_crawl_with_sem(c) for c in all_companies]
     results = await asyncio.gather(*tasks)
@@ -263,8 +267,10 @@ async def crawl_target_companies() -> dict:
     all_jobs = []
     new_count = 0
     filtered_count = 0
+    success_count = 0
+    error_count = 0
 
-    for name, jobs in results:
+    for name, jobs, error in results:
         company = next(c for c in all_companies if c["name"] == name)
         ats = company.get("ats")
 
@@ -274,12 +280,26 @@ async def crawl_target_companies() -> dict:
             logger.info("%s: filtered out %d jobs (location/seniority)", name, skipped)
         filtered_count += skipped
 
+        if error:
+            status = f"error: {error}"
+            error_count += 1
+        elif relevant:
+            status = "ok"
+            success_count += 1
+        elif jobs:
+            status = f"no_relevant_jobs (had {len(jobs)} total)"
+            success_count += 1  # API worked, just no matching jobs
+        else:
+            status = "no_jobs_found"
+            error_count += 1
+
         per_company[name] = {
             "url": company["careers_url"],
             "ats": ats["platform"] if ats else "html",
+            "slug": ats["slug"] if ats else None,
             "jobs_found": len(jobs),
             "jobs_relevant": len(relevant),
-            "status": "ok" if relevant else ("no_relevant_jobs" if jobs else "no_jobs_found"),
+            "status": status,
         }
 
         for job in relevant:
@@ -289,16 +309,20 @@ async def crawl_target_companies() -> dict:
         all_jobs.extend(relevant)
 
     scored = score_and_rank_jobs(job_store.get_all())
-    blocked = [name for name, info in per_company.items() if info["status"] != "ok"]
+    failed = {name: info["status"] for name, info in per_company.items()
+              if not info["status"].startswith("ok")}
 
     return {
         "companies_crawled": len(all_companies),
-        "total_jobs_found": len(all_jobs),
+        "companies_with_jobs": success_count,
+        "companies_failed": error_count,
+        "total_jobs_found": sum(info["jobs_found"] for info in per_company.values()),
+        "total_jobs_relevant": len(all_jobs),
         "filtered_out": filtered_count,
         "new_added": new_count,
-        "blocked_companies": blocked,
         "total_in_store": job_store.count(),
         "jobs_above_threshold": len(scored),
+        "failed_companies": failed,
         "per_company": per_company,
     }
 
