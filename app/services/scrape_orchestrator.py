@@ -158,7 +158,11 @@ async def _crawl_company_ats(company: dict) -> list[JobListing]:
         scraper_fn = ATS_SCRAPERS.get(platform)
         if scraper_fn:
             try:
-                jobs = await scraper_fn(slug, name)
+                # Pass eu=True for Greenhouse EU companies
+                kwargs = {"board_slug": slug, "company_name": name}
+                if platform == "greenhouse" and ats.get("eu"):
+                    kwargs["eu"] = True
+                jobs = await scraper_fn(**kwargs)
                 if jobs:
                     logger.info(f"ATS API ({platform}): {name} -> {len(jobs)} jobs")
                     return jobs

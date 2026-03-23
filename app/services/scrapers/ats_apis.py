@@ -25,15 +25,21 @@ def _detect_work_mode(text: str) -> WorkMode | None:
     return None
 
 
-async def scrape_greenhouse(board_slug: str, company_name: str) -> list[JobListing]:
+async def scrape_greenhouse(board_slug: str, company_name: str, eu: bool = False) -> list[JobListing]:
     """Fetch jobs from Greenhouse boards API.
 
     API: https://boards-api.greenhouse.io/v1/boards/{slug}/jobs
+    EU companies use: https://boards-api.eu.greenhouse.io/v1/boards/{slug}/jobs
     """
-    url = f"https://boards-api.greenhouse.io/v1/boards/{board_slug}/jobs?content=true"
+    host = "boards-api.eu.greenhouse.io" if eu else "boards-api.greenhouse.io"
+    url = f"https://{host}/v1/boards/{board_slug}/jobs?content=true"
     async with httpx.AsyncClient(timeout=15.0, headers=HEADERS) as client:
         try:
             resp = await client.get(url)
+            # If non-EU fails, try EU endpoint (and vice versa)
+            if resp.status_code == 404:
+                alt_host = "boards-api.greenhouse.io" if eu else "boards-api.eu.greenhouse.io"
+                resp = await client.get(f"https://{alt_host}/v1/boards/{board_slug}/jobs?content=true")
             resp.raise_for_status()
         except httpx.HTTPError:
             return []
