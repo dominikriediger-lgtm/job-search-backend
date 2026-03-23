@@ -3,3 +3,5 @@ uvicorn
 pydantic>=2.0
 pydantic-settings
 httpx
+beautifulsoup4
+lxml

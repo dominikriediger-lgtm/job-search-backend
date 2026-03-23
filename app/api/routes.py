@@ -7,6 +7,8 @@ from app.data.target_companies import TARGET_COMPANIES, get_career_urls
 from app.models.schemas import JobListing, JobStatus, ScoredJob
 from app.services.job_store import job_store
 from app.services.scrape_orchestrator import (
+    crawl_single_company,
+    crawl_target_companies,
     get_active_scrapers,
     run_full_search,
     scrape_all_sources,
@@ -118,6 +120,18 @@ async def scrape_query(query: str, location: str = "München", max_per_source: i
 async def scrape_full():
     """Run a full search across all target titles and all configured sources."""
     return await run_full_search()
+
+
+@router.post("/crawl/companies")
+async def crawl_all_companies():
+    """Crawl all 22 target company career pages directly."""
+    return await crawl_target_companies()
+
+
+@router.post("/crawl/company/{company_name}")
+async def crawl_company(company_name: str):
+    """Crawl a single company's career page by name."""
+    return await crawl_single_company(company_name)
 
 
 @router.get("/companies")
