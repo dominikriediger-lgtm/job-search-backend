@@ -483,7 +483,8 @@
 
     <script>
         const API = '/api/v1';
-        let allScoredJobs = [];
+        let allScoredJobs = [];  // all jobs (including below threshold)
+        let topScoredJobs = [];  // only above threshold
 
         // --- Tab switching ---
         document.querySelectorAll('.tab').forEach(tab => {
@@ -562,7 +563,10 @@
 
         async function loadScoredJobs() {
             try {
-                allScoredJobs = await api('jobs/scored/all');
+                [topScoredJobs, allScoredJobs] = await Promise.all([
+                    api('jobs/scored/all'),
+                    api('jobs/scored/all?include_below_threshold=true'),
+                ]);
                 renderTopJobs();
                 renderAllJobs();
             } catch (e) {
@@ -573,7 +577,7 @@
         function renderTopJobs() {
             const tbody = document.getElementById('top-jobs-body');
             const empty = document.getElementById('top-jobs-empty');
-            const top = allScoredJobs.slice(0, 10);
+            const top = topScoredJobs.slice(0, 10);
 
             if (top.length === 0) {
                 tbody.innerHTML = '';
@@ -728,8 +732,19 @@
             try {
                 const result = await api(endpoint, 'POST');
                 toast.remove();
-                const newJobs = result.new_added || result.total_jobs_found || 0;
-                showToast(`Done! ${newJobs} new jobs found.`, 'success');
+                const total = result.total_jobs_found || result.total_found || 0;
+                const newJobs = result.new_added || 0;
+                const blocked = result.blocked_companies?.length || 0;
+                let summary = `Found ${total} jobs, ${newJobs} new.`;
+                if (blocked > 0) summary += ` ${blocked} companies had no results.`;
+                if (result.per_company) {
+                    const details = Object.entries(result.per_company)
+                        .filter(([,v]) => v.jobs_found > 0)
+                        .map(([k,v]) => `${k}: ${v.jobs_found}`)
+                        .join(', ');
+                    if (details) console.log('Per company:', details);
+                }
+                showToast(summary, newJobs > 0 ? 'success' : 'error');
                 refreshAll();
             } catch (e) {
                 toast.remove();

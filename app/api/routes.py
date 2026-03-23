@@ -101,9 +101,17 @@ def score_single_job(job: JobListing):
 
 
 @router.get("/jobs/scored/all", response_model=list[ScoredJob])
-def get_scored_jobs():
-    """Score and rank all stored jobs."""
+def get_scored_jobs(include_below_threshold: bool = False):
+    """Score and rank all stored jobs.
+
+    By default only returns jobs above the min score threshold.
+    Pass include_below_threshold=true to see everything.
+    """
     jobs = job_store.get_all()
+    if include_below_threshold:
+        scored = [score_job(job) for job in jobs]
+        scored.sort(key=lambda s: s.total_score, reverse=True)
+        return scored
     return score_and_rank_jobs(jobs)
 
 
