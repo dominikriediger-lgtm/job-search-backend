@@ -186,15 +186,24 @@ async def scrape_personio_xml(board_slug: str, company_name: str) -> list[JobLis
     """Fetch jobs from Personio job board XML feed.
 
     URL pattern: https://{slug}.jobs.personio.de/xml
+    Some companies use .com instead of .de — we try both.
     """
-    url = f"https://{board_slug}.jobs.personio.de/xml"
     async with httpx.AsyncClient(timeout=_TIMEOUT, headers=HEADERS, follow_redirects=True) as client:
-        try:
-            resp = await _get_with_retry(client, url)
-            resp.raise_for_status()
-        except httpx.HTTPError as exc:
-            logger.warning("Personio API failed for %s (slug=%s): %s", company_name, board_slug, exc)
+        resp = None
+        for domain in ("personio.de", "personio.com"):
+            url = f"https://{board_slug}.jobs.{domain}/xml"
+            try:
+                resp = await _get_with_retry(client, url)
+                if resp.status_code == 200:
+                    break
+            except httpx.HTTPError:
+                continue
+        if resp is None or resp.status_code != 200:
+            logger.warning("Personio API failed for %s (slug=%s): tried .de and .com", company_name, board_slug)
             return []
+
+    # Determine which domain worked for building job URLs
+    actual_domain = "personio.com" if "personio.com" in str(resp.url) else "personio.de"
 
     jobs = []
     # Extract position blocks
@@ -204,7 +213,7 @@ async def scrape_personio_xml(board_slug: str, company_name: str) -> list[JobLis
         location = _xml_tag(pos, "office")
         department = _xml_tag(pos, "department")
         job_id = _xml_tag(pos, "id")
-        job_url = f"https://{board_slug}.jobs.personio.de/job/{job_id}" if job_id else ""
+        job_url = f"https://{board_slug}.jobs.{actual_domain}/job/{job_id}" if job_id else ""
 
         if title:
             jobs.append(JobListing(
@@ -216,7 +225,7 @@ async def scrape_personio_xml(board_slug: str, company_name: str) -> list[JobLis
                 url=job_url,
                 source="personio_api",
             ))
-    logger.info("Personio %s: %d jobs found", company_name, len(jobs))
+    logger.info("Personio %s: %d jobs found (via %s)", company_name, len(jobs), actual_domain)
     return jobs
 
 
